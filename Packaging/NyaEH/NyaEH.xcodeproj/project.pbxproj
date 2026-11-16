@@ -1,0 +1,605 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		D95318C02FB4434B00A6CAD5 /* NyaEHCore in Frameworks */ = {isa = PBXBuildFile; productRef = D95318BF2FB4434B00A6CAD5 /* NyaEHCore */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D95318A22FB441A800A6CAD5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D953188C2FB441A700A6CAD5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D95318932FB441A700A6CAD5;
+			remoteInfo = NyaEH;
+		};
+		D95318AC2FB441A800A6CAD5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D953188C2FB441A700A6CAD5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D95318932FB441A700A6CAD5;
+			remoteInfo = NyaEH;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		D95318942FB441A700A6CAD5 /* NyaEH.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NyaEH.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D95318A12FB441A800A6CAD5 /* NyaEHTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NyaEHTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D95318AB2FB441A800A6CAD5 /* NyaEHUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NyaEHUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		D95318962FB441A700A6CAD5 /* NyaEH */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = NyaEH;
+			sourceTree = "<group>";
+		};
+		D95318A42FB441A800A6CAD5 /* NyaEHTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = NyaEHTests;
+			sourceTree = "<group>";
+		};
+		D95318AE2FB441A800A6CAD5 /* NyaEHUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = NyaEHUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D95318912FB441A700A6CAD5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D95318C02FB4434B00A6CAD5 /* NyaEHCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D953189E2FB441A800A6CAD5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D95318A82FB441A800A6CAD5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		D953188B2FB441A700A6CAD5 = {
+			isa = PBXGroup;
+			children = (
+				D95318962FB441A700A6CAD5 /* NyaEH */,
+				D95318A42FB441A800A6CAD5 /* NyaEHTests */,
+				D95318AE2FB441A800A6CAD5 /* NyaEHUITests */,
+				D95318952FB441A700A6CAD5 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D95318952FB441A700A6CAD5 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				D95318942FB441A700A6CAD5 /* NyaEH.app */,
+				D95318A12FB441A800A6CAD5 /* NyaEHTests.xctest */,
+				D95318AB2FB441A800A6CAD5 /* NyaEHUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D95318932FB441A700A6CAD5 /* NyaEH */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D95318B52FB441A800A6CAD5 /* Build configuration list for PBXNativeTarget "NyaEH" */;
+			buildPhases = (
+				D95318902FB441A700A6CAD5 /* Sources */,
+				D95318912FB441A700A6CAD5 /* Frameworks */,
+				D95318922FB441A700A6CAD5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				D95318962FB441A700A6CAD5 /* NyaEH */,
+			);
+			name = NyaEH;
+			packageProductDependencies = (
+				D95318BF2FB4434B00A6CAD5 /* NyaEHCore */,
+			);
+			productName = NyaEH;
+			productReference = D95318942FB441A700A6CAD5 /* NyaEH.app */;
+			productType = "com.apple.product-type.application";
+		};
+		D95318A02FB441A800A6CAD5 /* NyaEHTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D95318B82FB441A800A6CAD5 /* Build configuration list for PBXNativeTarget "NyaEHTests" */;
+			buildPhases = (
+				D953189D2FB441A800A6CAD5 /* Sources */,
+				D953189E2FB441A800A6CAD5 /* Frameworks */,
+				D953189F2FB441A800A6CAD5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D95318A32FB441A800A6CAD5 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				D95318A42FB441A800A6CAD5 /* NyaEHTests */,
+			);
+			name = NyaEHTests;
+			packageProductDependencies = (
+			);
+			productName = NyaEHTests;
+			productReference = D95318A12FB441A800A6CAD5 /* NyaEHTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		D95318AA2FB441A800A6CAD5 /* NyaEHUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D95318BB2FB441A800A6CAD5 /* Build configuration list for PBXNativeTarget "NyaEHUITests" */;
+			buildPhases = (
+				D95318A72FB441A800A6CAD5 /* Sources */,
+				D95318A82FB441A800A6CAD5 /* Frameworks */,
+				D95318A92FB441A800A6CAD5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D95318AD2FB441A800A6CAD5 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				D95318AE2FB441A800A6CAD5 /* NyaEHUITests */,
+			);
+			name = NyaEHUITests;
+			packageProductDependencies = (
+			);
+			productName = NyaEHUITests;
+			productReference = D95318AB2FB441A800A6CAD5 /* NyaEHUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D953188C2FB441A700A6CAD5 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2640;
+				LastUpgradeCheck = 2640;
+				TargetAttributes = {
+					D95318932FB441A700A6CAD5 = {
+						CreatedOnToolsVersion = 26.4;
+					};
+					D95318A02FB441A800A6CAD5 = {
+						CreatedOnToolsVersion = 26.4;
+						TestTargetID = D95318932FB441A700A6CAD5;
+					};
+					D95318AA2FB441A800A6CAD5 = {
+						CreatedOnToolsVersion = 26.4;
+						TestTargetID = D95318932FB441A700A6CAD5;
+					};
+				};
+			};
+			buildConfigurationList = D953188F2FB441A700A6CAD5 /* Build configuration list for PBXProject "NyaEH" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = D953188B2FB441A700A6CAD5;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				D95318BE2FB4434B00A6CAD5 /* XCLocalSwiftPackageReference "../.." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = D95318952FB441A700A6CAD5 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D95318932FB441A700A6CAD5 /* NyaEH */,
+				D95318A02FB441A800A6CAD5 /* NyaEHTests */,
+				D95318AA2FB441A800A6CAD5 /* NyaEHUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D95318922FB441A700A6CAD5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D953189F2FB441A800A6CAD5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D95318A92FB441A800A6CAD5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D95318902FB441A700A6CAD5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D953189D2FB441A800A6CAD5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D95318A72FB441A800A6CAD5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D95318A32FB441A800A6CAD5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D95318932FB441A700A6CAD5 /* NyaEH */;
+			targetProxy = D95318A22FB441A800A6CAD5 /* PBXContainerItemProxy */;
+		};
+		D95318AD2FB441A800A6CAD5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D95318932FB441A700A6CAD5 /* NyaEH */;
+			targetProxy = D95318AC2FB441A800A6CAD5 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		D95318B32FB441A800A6CAD5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		D95318B42FB441A800A6CAD5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		D95318B62FB441A800A6CAD5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 151;
+				CODE_SIGN_ENTITLEMENTS = NyaEH/NyaEH.entitlements;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = NyaEH;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.5.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gazelee.NyaEH;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		D95318B72FB441A800A6CAD5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 151;
+				CODE_SIGN_ENTITLEMENTS = NyaEH/NyaEH.entitlements;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = NyaEH;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.5.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gazelee.NyaEH;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		D95318B92FB441A800A6CAD5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 151;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.5.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gazelee.NyaEHTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NyaEH.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NyaEH";
+			};
+			name = Debug;
+		};
+		D95318BA2FB441A800A6CAD5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 151;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.5.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gazelee.NyaEHTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NyaEH.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NyaEH";
+			};
+			name = Release;
+		};
+		D95318BC2FB441A800A6CAD5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 151;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.5.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gazelee.NyaEHUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = NyaEH;
+			};
+			name = Debug;
+		};
+		D95318BD2FB441A800A6CAD5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 151;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.5.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gazelee.NyaEHUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = NyaEH;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		D953188F2FB441A700A6CAD5 /* Build configuration list for PBXProject "NyaEH" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D95318B32FB441A800A6CAD5 /* Debug */,
+				D95318B42FB441A800A6CAD5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D95318B52FB441A800A6CAD5 /* Build configuration list for PBXNativeTarget "NyaEH" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D95318B62FB441A800A6CAD5 /* Debug */,
+				D95318B72FB441A800A6CAD5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D95318B82FB441A800A6CAD5 /* Build configuration list for PBXNativeTarget "NyaEHTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D95318B92FB441A800A6CAD5 /* Debug */,
+				D95318BA2FB441A800A6CAD5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D95318BB2FB441A800A6CAD5 /* Build configuration list for PBXNativeTarget "NyaEHUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D95318BC2FB441A800A6CAD5 /* Debug */,
+				D95318BD2FB441A800A6CAD5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		D95318BE2FB4434B00A6CAD5 /* XCLocalSwiftPackageReference "../.." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D95318BF2FB4434B00A6CAD5 /* NyaEHCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = NyaEHCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = D953188C2FB441A700A6CAD5 /* Project object */;
+}
