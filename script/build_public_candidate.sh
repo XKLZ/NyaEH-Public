@@ -53,6 +53,7 @@ plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$2"; }
 for key in SURequireSignedFeed SUEnableInstallerLauncherService SUVerifyUpdateBeforeExtraction; do
   [[ "$(plist "$key" "$INFO")" == true ]]
 done
+bash "$ROOT/script/check_app_icon.sh" "$APP"
 
 # Keep dSYMs outside the bundle. Local linker symbols can also retain absolute paths.
 codesign --remove-signature "$MAIN" 2>/dev/null || true

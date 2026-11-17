@@ -125,6 +125,7 @@ Prefer existing patterns over new framework layers. Add abstractions only when t
 - Put user actions on the appropriate domain Store, `CatalogStore`, or services when they change app state, touch the database, perform IO, or coordinate async work.
 - Do not make the UI delete, move, or rewrite source archive files unless the feature is explicitly designed as a destructive file operation with confirmation.
 - Xcode shell changes belong in `Packaging/NyaEH` only when they concern packaging, signing, sandbox, app icon, bundle metadata, or the shell's call into `NyaEHScene()`.
+- Keep the layered Icon Composer `AppIcon.icon` in the app target, with `AppIcon` selected as the primary icon in Debug and Release. The public candidate builder checks the compiled icon and bundle metadata before packaging.
 
 ## Documentation Hygiene
 

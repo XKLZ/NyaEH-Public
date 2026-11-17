@@ -76,7 +76,7 @@ xcodebuild -project Packaging/NyaEH/NyaEH.xcodeproj -scheme NyaEH -configuration
 ./script/build_public_candidate.sh /private/tmp/NyaEH-Public-1.5.1.app.zip
 ```
 
-脚本只在本机构建、裁剪、ad-hoc 签名、校验和打包，不负责上传或公证。1.5.1 是明确标注未公证的公开预览；正式分发另行完成 Developer ID 签名和 Apple 公证。
+脚本只在本机构建、裁剪、ad-hoc 签名、校验和打包，不负责上传或公证。打包前会检查 Xcode 已编译分层图标 `AppIcon.icon`，且包内图标字段和资源齐全。1.5.1 是明确标注未公证的公开预览；正式分发另行完成 Developer ID 签名和 Apple 公证。
 
 ### 发布公开更新
 
