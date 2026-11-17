@@ -1,10 +1,23 @@
-# NyaEH
+<p align="center">
+  <img src="docs/images/app-icon.png" width="112" height="112" alt="NyaEH 应用图标">
+</p>
 
-NyaEH 是一款 macOS 本地漫画书库管理器。选一个文件夹，就能搜索、整理和阅读你的漫画，原文件留在原处。
+<h1 align="center">NyaEH</h1>
 
-**macOS 26 或更新版本 · Apple 芯片**
+<p align="center">NyaEH 是一款 macOS 本地漫画书库管理器。选一个文件夹，就能搜索、整理和阅读你的漫画，原文件留在原处。</p>
 
-[下载 1.5.1 预览版](https://github.com/XKLZ/NyaEH-Public/releases/tag/1.5.1) · [使用指南](docs/user-guide.md) · [更新日志](CHANGELOG.md)
+<p align="center">
+  <strong><a href="https://github.com/XKLZ/NyaEH-Public/releases/tag/1.5.1">下载 1.5.1 预览版</a></strong> ·
+  <a href="docs/user-guide.md">使用指南</a> ·
+  <a href="CHANGELOG.md">更新日志</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/macOS-26%2B-4D315B?style=flat-square&amp;logo=apple" alt="macOS 26 或更新版本">
+  <img src="https://img.shields.io/badge/%E6%9E%B6%E6%9E%84-Apple%20%E8%8A%AF%E7%89%87-4D315B?style=flat-square" alt="Apple 芯片">
+  <a href="https://github.com/XKLZ/NyaEH-Public/releases"><img src="https://img.shields.io/github/v/release/XKLZ/NyaEH-Public?include_prereleases&amp;style=flat-square&amp;label=%E9%A2%84%E8%A7%88%E7%89%88&amp;color=4D315B" alt="GitHub 预览版"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-4D315B?style=flat-square" alt="MIT 许可证"></a>
+</p>
 
 ## 主要功能
 
