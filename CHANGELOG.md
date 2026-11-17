@@ -1,6 +1,7 @@
 # Changelog
 
-## 1.5.1 (local public-edition candidate)
+## 1.5.1 (build 151) · 公开预览
 
-- Prepare the public source snapshot and an independent anonymous update channel.
-- Replace personal test data with generated fixtures. No example library ships with the app.
+- NyaEH 首次公开源码，采用 MIT 许可证；测试数据由测试运行时生成，不附带示例书库。
+- 公开版的 Sparkle 更新使用独立签名密钥，无需 GitHub 账号或令牌。旧私有版不能自动切换到本更新源。
+- 安装包支持 Apple 芯片及 macOS 26 或更新版本。此预览包未经过 Apple 公证，macOS 可能阻止首次运行。

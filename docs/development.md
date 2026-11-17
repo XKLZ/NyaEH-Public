@@ -76,7 +76,23 @@ xcodebuild -project Packaging/NyaEH/NyaEH.xcodeproj -scheme NyaEH -configuration
 ./script/build_public_candidate.sh /private/tmp/NyaEH-Public-1.5.1.app.zip
 ```
 
-脚本只在本机构建、裁剪、ad-hoc 签名、校验和打包。候选包不是正式发布资产。公开版从独立仓库以匿名请求访问 Sparkle 更新源；私有版不会自动切换到公开版。
+脚本只在本机构建、裁剪、ad-hoc 签名、校验和打包，不负责上传或公证。1.5.1 是明确标注未公证的公开预览；正式分发另行完成 Developer ID 签名和 Apple 公证。
+
+### 发布公开更新
+
+1. 使用公开版独立密钥签署最终 ZIP，保存签名、长度、SHA-256、版本和构建号。签署后不要重打包。公开密钥与 App 内的 `SUPublicEDKey` 必须一致。
+2. 先上传新 ZIP 到公开版仓库的对应 Release，验证下载字节与本地一致。再按发布版本生成更新记录，使用 Release 资产的公开下载 URL，不使用带令牌的 API 地址。
+3. 更新并重签 `updates/appcast.xml`，确认签名有效再推送。对这次首次发布，可以先在私有阶段准备更新清单，等 Release 完整后再公开仓库。
+4. 用不带 `Authorization` 的请求验证 GitHub Contents API、raw 更新清单和 Release ZIP。比较下载到的清单与签名版本，并核对 ZIP 的 SHA-256、大小和构建号。完整自动升级要用已安装的较低公开版本做隔离测试。
+
+签署清单时使用公开版的 Keychain 账户：
+
+```bash
+.build/artifacts/sparkle/Sparkle/bin/sign_update --account com.gazelee.NyaEH.public updates/appcast.xml
+.build/artifacts/sparkle/Sparkle/bin/sign_update --account com.gazelee.NyaEH.public --verify updates/appcast.xml
+```
+
+私有版不会自动切换到公开版。首次切换需要手动安装；不要复用私有 appcast、密钥或更新令牌。
 
 ## 维护脚本
 

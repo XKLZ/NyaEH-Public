@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>NyaEH Public Updates</title>
+    <link>https://github.com/XKLZ/NyaEH-Public/releases</link>
+    <description>Signed updates for the public edition of NyaEH.</description>
+    <item>
+      <title>NyaEH 1.5.1 Preview</title>
+      <link>https://github.com/XKLZ/NyaEH-Public/releases/tag/1.5.1</link>
+      <description>First public preview. Requires macOS 26 or later and Apple silicon. This preview is not notarized.</description>
+      <sparkle:version>151</sparkle:version>
+      <sparkle:shortVersionString>1.5.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <enclosure url="https://github.com/XKLZ/NyaEH-Public/releases/download/1.5.1/NyaEH-Public-1.5.1-151.app.zip" length="6972623" type="application/octet-stream" sparkle:edSignature="u/voTJhBzYB3Rn5FyeyinU4VaYYyZHEIQRG7WqZE0NuOHHQKtDnRDYKXVb3prjaRcAsKSt6gJS8lnWalz9EOAg=="></enclosure>
+    </item>
+  </channel>
+</rss><!-- sparkle-signatures:
+edSignature: I6pFa4jjV1D/uhpzqgsGwtaU8Fa6JuPD9iyVr1h00gJw6tzd0ql64fRrThbuT9v+x2nP3H6SBZyb9MvF/3wgDQ==
+length: 1410
+-->
