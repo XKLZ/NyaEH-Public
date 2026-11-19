@@ -26,6 +26,19 @@ enum L10nKey: String, CaseIterable, Sendable {
     case bookShelf
     case bookTitleCompact
     case bookTitleCompactJapanese
+    case cardDisplay
+    case cardMetadata
+    case cardEvaluation
+    case cardReading
+    case cardLanguage
+    case cardReadingNumbers
+    case cardRestoreDefaults
+    case cardRead
+    case cardUnread
+    case cardDirectRead
+    case cardTimesRead
+    case cardPrimaryChanged
+    case cardCurrentVersion
     case bookTitleDisplayMode
     case bookTitleJapanese
     case bookTitleOriginal
@@ -69,6 +82,15 @@ enum L10nKey: String, CaseIterable, Sendable {
     case collapseSection
     case contentTags
     case copyLink
+    case cardViewDetails
+    case cardMarkRead
+    case cardMarkUnread
+    case cardOwningSeries
+    case cardViewSeries
+    case cardManageSeries
+    case cardManageVersions
+    case cardOpenSource
+    case cardDeselect
     case copyTitle
     case titleCopied
     case created
@@ -77,6 +99,33 @@ enum L10nKey: String, CaseIterable, Sendable {
     case developmentTools
     case developmentToolsDescription
     case developmentToolsUnavailable
+    case arrivalSearch
+    case shelfPreview
+    case shelfCurrent
+    case shelfRedesign
+    case shelfLibrary
+    case shelfFixtures
+    case shelfSingle
+    case shelfMore
+    case shelfToday
+    case shelfYesterday
+    case sampleGallery
+    case sampleCompare
+    case sampleStandard
+    case sampleUnified
+    case sampleStandardOnly
+    case sampleUnifiedOnly
+    case sampleBackground
+    case sampleWidth
+    case samplePlain
+    case sampleMaterial
+    case sampleTinted
+    case samplePair
+    case sampleTrio
+    case sampleDozen
+    case sampleMissing
+    case sampleReadCount
+    case sampleUnknownPages
     case developmentReaderTest
     case developmentReaderTestDescription
     case developmentReaderArchivePath
@@ -116,6 +165,7 @@ enum L10nKey: String, CaseIterable, Sendable {
     case gallerySearchSite
     case hash
     case home
+    case homeInsights
     case homeInsightAuthors
     case homeInsightCharacters
     case homeInsightGroups

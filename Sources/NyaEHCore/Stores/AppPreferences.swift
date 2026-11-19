@@ -341,6 +341,10 @@ final class AppPreferences {
         }
     }
 
+    var bookCardFields: BookCardFields {
+        didSet { userDefaults.set(bookCardFields.rawValue, forKey: Keys.bookCardFields) }
+    }
+
     var homeCardWidth: Int {
         didSet {
             let normalized = Self.normalizedCardWidth(homeCardWidth)
@@ -536,6 +540,8 @@ final class AppPreferences {
         advancedSearchPageSizeStorage = Self.normalizedPageSize(userDefaults.object(forKey: Keys.advancedSearchPageSize) as? Int ?? PageSizeOption.defaultValue)
         libraryCollectionPageSizeStorage = Self.normalizedPageSize(userDefaults.object(forKey: Keys.libraryCollectionPageSize) as? Int ?? PageSizeOption.defaultValue)
         tagCategoryPageSize = Self.normalizedPageSize(userDefaults.object(forKey: Keys.tagCategoryPageSize) as? Int ?? PageSizeOption.defaultValue)
+        bookCardFields = BookCardFields(rawValue: userDefaults.object(forKey: Keys.bookCardFields) as? Int
+                                       ?? ((userDefaults.object(forKey: "NyaEH.cardFields") as? Int ?? BookCardFields.all.rawValue) | BookCardFields.directRead.rawValue)).intersection(.all)
         homeCardWidth = Self.normalizedCardWidth(userDefaults.object(forKey: Keys.homeCardWidth) as? Int ?? BookCardMetrics.defaultWidth)
         advancedSearchCardWidth = Self.normalizedCardWidth(userDefaults.object(forKey: Keys.advancedSearchCardWidth) as? Int ?? BookCardMetrics.defaultWidth)
         libraryShelfCardWidth = Self.normalizedCardWidth(userDefaults.object(forKey: Keys.libraryShelfCardWidth) as? Int ?? BookCardMetrics.defaultWidth)
@@ -689,6 +695,7 @@ final class AppPreferences {
         static let homeInsightChartsExpanded = "NyaEH.home.insightChartsExpanded"
         static let libraryCollectionPageSize = "NyaEH.pagination.libraryCollection.pageSize"
         static let tagCategoryPageSize = "NyaEH.pagination.tagCategory.pageSize"
+        static let bookCardFields = "NyaEH.cardFields.v2"
         static let homeCardWidth = "NyaEH.cardWidth.home"
         static let advancedSearchCardWidth = "NyaEH.cardWidth.advancedSearch"
         static let libraryShelfCardWidth = "NyaEH.cardWidth.libraryShelf"

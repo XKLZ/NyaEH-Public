@@ -4,6 +4,7 @@ import AppKit
 import SwiftUI
 
 struct CollectionManagementView: View {
+    @Binding var requestedGroupID: String?
     @Bindable var store: OrganizationStore
     let titleDisplayMode: BookTitleDisplayMode
     let isTagTranslationEnabled: Bool
@@ -70,6 +71,13 @@ struct CollectionManagementView: View {
 
     var body: some View {
         splitContent
+            .onChange(of: requestedGroupID, initial: true) { _, target in
+                guard let target else { return }
+                listTab = .groups
+                if !filteredCollections.contains(where: { $0.id == target }) { collectionListSearch = "" }
+                store.catalog.selectedCollectionID = target
+                requestedGroupID = nil
+            }
     }
 
     private var splitContent: some View {
@@ -438,25 +446,30 @@ struct CollectionManagementView: View {
                             ? localizer.string(.collectionManagementDescription) : ""
                     )
                 } else {
-                    List(selection: $store.selectedCollectionID) {
-                        ForEach(filteredCollections) { collection in
-                            ManagementGroupListRow(
-                                title: collection.name,
-                                memberCountText: localizer.collectionBookCount(store.catalog.displayBooks(in: collection).count),
-                                recommendationCount: collection.databaseID.flatMap {
-                                    store.catalog.addToCollectionRecommendationCounts[$0]
-                                } ?? 0,
-                                isSelected: store.catalog.selectedCollectionID == collection.id,
-                                isSaving: collection.databaseID.map {
-                                    store.catalog.savingOrganizationKeys.contains("collection:\($0)")
-                                } ?? false,
-                                localizer: localizer
-                            )
-                            .tag(collection.id)
+                    ScrollViewReader { proxy in
+                        List(selection: $store.selectedCollectionID) {
+                            ForEach(filteredCollections) { collection in
+                                ManagementGroupListRow(
+                                    title: collection.name,
+                                    memberCountText: localizer.collectionBookCount(store.catalog.displayBooks(in: collection).count),
+                                    recommendationCount: collection.databaseID.flatMap {
+                                        store.catalog.addToCollectionRecommendationCounts[$0]
+                                    } ?? 0,
+                                    isSelected: store.catalog.selectedCollectionID == collection.id,
+                                    isSaving: collection.databaseID.map {
+                                        store.catalog.savingOrganizationKeys.contains("collection:\($0)")
+                                    } ?? false,
+                                    localizer: localizer
+                                )
+                                .tag(collection.id)
+                            }
+                        }
+                        .listStyle(.sidebar)
+                        .scrollContentBackground(.hidden)
+                        .onChange(of: store.catalog.selectedCollectionID, initial: true) { _, selection in
+                            if let selection { proxy.scrollTo(selection) }
                         }
                     }
-                    .listStyle(.sidebar)
-                    .scrollContentBackground(.hidden)
                 }
 
             } else if !store.catalog.createCollectionRecommendations.isEmpty {
@@ -789,6 +802,7 @@ struct CollectionManagementView: View {
 }
 
 struct VersionManagementView: View {
+    @Binding var requestedGroupID: String?
     @Environment(\.undoManager) private var undoManager
     @Bindable var store: OrganizationStore
     let titleDisplayMode: BookTitleDisplayMode
@@ -848,6 +862,13 @@ struct VersionManagementView: View {
 
     var body: some View {
         splitContent
+            .onChange(of: requestedGroupID, initial: true) { _, target in
+                guard let target else { return }
+                listTab = .groups
+                if !filteredVersionGroups.contains(where: { $0.id == target }) { versionGroupListSearch = "" }
+                store.catalog.selectedVersionGroupID = target
+                requestedGroupID = nil
+            }
             .confirmationDialog(
                 localizer.string(.remove),
                 isPresented: Binding(
@@ -1147,25 +1168,30 @@ struct VersionManagementView: View {
                             ? localizer.string(.versionManagementDescription) : ""
                     )
                 } else {
-                    List(selection: $store.selectedVersionGroupID) {
-                        ForEach(filteredVersionGroups) { group in
-                            ManagementGroupListRow(
-                                title: versionGroupTitles[group.id] ?? groupTitle(group),
-                                memberCountText: nil,
-                                recommendationCount: group.databaseID.flatMap {
-                                    store.catalog.addToVersionGroupRecommendationCounts[$0]
-                                } ?? 0,
-                                isSelected: store.catalog.selectedVersionGroupID == group.id,
-                                isSaving: group.databaseID.map {
-                                    store.catalog.savingOrganizationKeys.contains("version:\($0)")
-                                } ?? false,
-                                localizer: localizer
-                            )
-                            .tag(group.id)
+                    ScrollViewReader { proxy in
+                        List(selection: $store.selectedVersionGroupID) {
+                            ForEach(filteredVersionGroups) { group in
+                                ManagementGroupListRow(
+                                    title: versionGroupTitles[group.id] ?? groupTitle(group),
+                                    memberCountText: nil,
+                                    recommendationCount: group.databaseID.flatMap {
+                                        store.catalog.addToVersionGroupRecommendationCounts[$0]
+                                    } ?? 0,
+                                    isSelected: store.catalog.selectedVersionGroupID == group.id,
+                                    isSaving: group.databaseID.map {
+                                        store.catalog.savingOrganizationKeys.contains("version:\($0)")
+                                    } ?? false,
+                                    localizer: localizer
+                                )
+                                .tag(group.id)
+                            }
+                        }
+                        .listStyle(.sidebar)
+                        .scrollContentBackground(.hidden)
+                        .onChange(of: store.catalog.selectedVersionGroupID, initial: true) { _, selection in
+                            if let selection { proxy.scrollTo(selection) }
                         }
                     }
-                    .listStyle(.sidebar)
-                    .scrollContentBackground(.hidden)
                 }
 
             } else if !store.catalog.createVersionGroupRecommendations.isEmpty {

@@ -38,7 +38,7 @@ enum LibraryFilter: String, CaseIterable, Identifiable, Sendable {
         case .all:
             "books.vertical"
         case .marked:
-            "star"
+            "heart.fill"
         case .correct:
             "checkmark.circle"
         case .unscanned:

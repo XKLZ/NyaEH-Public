@@ -34,6 +34,7 @@ struct SearchCollectionPopoverAnchor<Content: View>: View {
                     onDetails: { onDetails(session.id, source.item) },
                     onClose: { state.dismiss(presentationID: session.id) }
                 )
+                .editionDeckHost()
                 .id(session.id)
             }
             .onGeometryChange(for: Bool.self) { [viewport, topInset] geometry in
@@ -100,7 +101,7 @@ private struct SearchCollectionMembersPopover: View {
     @State private var scrollPosition: ScrollPosition
     @State private var scrollOffset: CGFloat
     @State private var hasRestoredScroll = false
-    @State private var requestedMemberFocus: LibraryBook.ID?
+    @State private var requestedFocus: SearchCollectionPopoverFocus?
     @FocusState private var focusedTarget: SearchCollectionPopoverFocus?
 
     // 一次性的种子属于 session 身份；关闭重开后以新的 session 创建视图。
@@ -130,11 +131,25 @@ private struct SearchCollectionMembersPopover: View {
         self.onClose = onClose
         _scrollPosition = State(initialValue: ScrollPosition(y: session.position.scrollOffset))
         _scrollOffset = State(initialValue: session.position.scrollOffset)
-        _requestedMemberFocus = State(initialValue: session.position.focusedMemberID ?? source.books.first?.id)
+        _requestedFocus = State(initialValue: (session.position.focusedMemberID ?? source.books.first?.id).map(SearchCollectionPopoverFocus.member))
+    }
+
+    @Environment(\.bookCardFields) private var cardFields
+    @Environment(\.bookCardCatalog) private var catalog
+    @Environment(\.bookCardsShowUserHidden) private var showsUserHidden
+
+    @Environment(\.bookCardAggregatesVersions) private var aggregatesVersions
+
+    private var metadataMemberIDs: Set<LibraryBook.ID> {
+        guard let catalog, aggregatesVersions, !cardFields.isDisjoint(with: .metadata) else { return [] }
+        return Set(source.books.compactMap { member in
+            let book = catalog.bookForCard(member)
+            return catalog.cardVersionAlternatives(to: book, showsUserHidden: showsUserHidden).isEmpty ? nil : book.id
+        })
     }
 
     private var metrics: SearchCollectionPopoverMetrics {
-        SearchCollectionPopoverMetrics(viewport: viewport, memberCount: source.books.count, cardMetrics: cardMetrics)
+        SearchCollectionPopoverMetrics(viewport: viewport, memberCount: source.books.count, cardMetrics: cardMetrics, fields: cardFields)
     }
 
     private var initialFocus: SearchCollectionPopoverFocus {
@@ -143,6 +158,7 @@ private struct SearchCollectionMembersPopover: View {
     }
 
     var body: some View {
+        let metadataIDs = metadataMemberIDs
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 header
@@ -186,38 +202,29 @@ private struct SearchCollectionMembersPopover: View {
                     }
                 }
             }
-            .onChange(of: requestedMemberFocus) { _, bookID in
-                if let bookID { proxy.scrollTo(bookID) }
+            .onChange(of: requestedFocus) { _, target in
+                if let bookID = target?.memberID { proxy.scrollTo(bookID) }
             }
             .onChange(of: hasRestoredScroll) { _, restored in
                 // 成员顺序变化时，旧偏移可能不再包含焦点成员；等首轮布局后再定位它。
-                if restored, let bookID = requestedMemberFocus { proxy.scrollTo(bookID) }
+                if restored, let bookID = requestedFocus?.memberID { proxy.scrollTo(bookID) }
             }
-            .onKeyPress(.tab, phases: .down) { press in
-                let next = SearchCollectionPopoverFocus.next(
-                    after: focusedTarget,
-                    backwards: press.modifiers.contains(.shift),
-                    memberIDs: source.books.map(\.id)
-                )
-                switch next {
-                case .details:
-                    requestedMemberFocus = nil
-                    focusedTarget = .details
-                case .member(let bookID):
-                    requestedMemberFocus = bookID
-                }
-                return .handled
-            }
+
         }
         .frame(width: metrics.size.width, height: metrics.size.height)
         .defaultFocus($focusedTarget, initialFocus)
         .onChange(of: source.books.map(\.id)) { _, memberIDs in
             let needsFallback: Bool
-            if case .member(let bookID) = focusedTarget { needsFallback = !memberIDs.contains(bookID) }
+            if let bookID = focusedTarget?.memberID { needsFallback = !memberIDs.contains(bookID) }
             else { needsFallback = focusedTarget == nil }
             if needsFallback {
-                requestedMemberFocus = memberIDs.first
+                requestedFocus = memberIDs.first.map(SearchCollectionPopoverFocus.member)
                 if memberIDs.isEmpty { focusedTarget = .details }
+            }
+        }
+        .onChange(of: metadataIDs) { _, updated in
+            if case .metadata(let id) = focusedTarget, !updated.contains(id) {
+                requestedFocus = .member(id)
             }
         }
         .onKeyPress(.return) {
@@ -226,7 +233,7 @@ private struct SearchCollectionMembersPopover: View {
                 guard let book = source.books.first(where: { $0.id == bookID }) else { return .ignored }
                 activate(book)
             case .details: onDetails()
-            case nil: return .ignored
+            case .metadata, .reader, nil: return .ignored
             }
             return .handled
         }
@@ -257,25 +264,23 @@ private struct SearchCollectionMembersPopover: View {
     }
 
     private func memberButton(_ book: LibraryBook) -> some View {
-        let title = BookTitleFormatter.displayTitle(for: book, mode: titleDisplayMode)
-        return BookCardButton(
+        BookCardButton(
             book: book,
             titleDisplayMode: titleDisplayMode,
             localizer: localizer,
             metrics: metrics.bookCardMetrics,
             showsUnobstructedCover: true,
-            action: { activate(book) }
+            selection: BookCardSelection(isSelected: selectedBookIDs.contains(book.id), toggle: {
+                onToggleMemberSelection(book)
+            }),
+            collectionFocus: $focusedTarget,
+            beforeGroupNavigation: onClose,
+            action: activate
         )
-        .focused($focusedTarget, equals: .member(book.id))
-        .help(title)
-        .accessibilityLabel(title)
-        .searchBatchSelection(isSelected: selectedBookIDs.contains(book.id), localizer: localizer) {
-            onToggleMemberSelection(book)
-        }
-        .onChange(of: requestedMemberFocus, initial: true) { _, bookID in
-            if bookID == book.id {
-                focusedTarget = .member(book.id)
-                requestedMemberFocus = nil
+        .onChange(of: requestedFocus, initial: true) { _, target in
+            if let target, target.memberID == book.id {
+                focusedTarget = target
+                requestedFocus = nil
             }
         }
     }

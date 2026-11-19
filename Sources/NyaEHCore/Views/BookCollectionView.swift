@@ -240,8 +240,8 @@ private struct BookRowView: View {
 
             VStack(alignment: .trailing, spacing: 6) {
                 if book.mark {
-                    Image(systemName: "star.fill")
-                        .foregroundStyle(.yellow)
+                    Image(systemName: "heart.fill")
+                        .foregroundStyle(.red)
                 }
 
                 BookStatusBadge(status: book.status, exist: book.exist, localizer: localizer)
@@ -295,15 +295,18 @@ struct BookCoverThumbnail: View {
     let height: CGFloat
     let cornerRadius: CGFloat
     let fitsEntireImage: Bool
+    let showsFitBackground: Bool
 
     @State private var loadedCover: LoadedCoverState?
 
-    init(book: LibraryBook, width: CGFloat, height: CGFloat, cornerRadius: CGFloat, fitsEntireImage: Bool = false) {
+    init(book: LibraryBook, width: CGFloat, height: CGFloat, cornerRadius: CGFloat, fitsEntireImage: Bool = false,
+         showsFitBackground: Bool = true) {
         self.book = book
         self.width = width
         self.height = height
         self.cornerRadius = cornerRadius
         self.fitsEntireImage = fitsEntireImage
+        self.showsFitBackground = showsFitBackground
 
         let pixelBucket = Self.targetPixelBucket(width: width, height: height)
         if let coverPath = book.coverPath,
@@ -327,7 +330,7 @@ struct BookCoverThumbnail: View {
                 imageContent(image)
             } else {
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(.quaternary)
+                    .fill(showsFitBackground ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
                     .overlay {
                         Image(systemName: "book.closed")
                             .foregroundStyle(.secondary)
@@ -346,7 +349,7 @@ struct BookCoverThumbnail: View {
         let displayMode = BookCoverThumbnailDisplayMode.resolve(imageSize: image.size, fitsEntireImage: fitsEntireImage)
 
         ZStack {
-            if displayMode == .fit {
+            if displayMode == .fit && showsFitBackground {
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .fill(.quaternary)
             }
@@ -361,6 +364,7 @@ struct BookCoverThumbnail: View {
                     .resizable()
                     .scaledToFit()
                     .clipShape(RoundedRectangle(cornerRadius: fitsEntireImage ? cornerRadius : 0))
+                    .frame(maxWidth: .infinity, alignment: showsFitBackground ? .center : .leading)
             }
         }
     }

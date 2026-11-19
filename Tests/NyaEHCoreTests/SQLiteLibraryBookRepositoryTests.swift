@@ -3657,6 +3657,31 @@ struct SQLiteLibraryBookRepositoryTests {
     }
 
     @MainActor
+    @Test("card promotion reports the committed outcome and leaves the prior primary on failure")
+    func cardPrimaryCompletion() async throws {
+        let context = try makeContext()
+        let first = try context.books.insert(sampleBook(filepath: "/tmp/card-primary.cbz"))
+        let other = try context.books.insert(sampleBook(hash: "card-alt", filepath: "/tmp/card-alt.cbz"))
+        let service = BookLibraryService(bookRepository: context.books, metadataRepository: context.metadata,
+                                         versionGroupRepository: context.versionGroups)
+        _ = try service.createVersionGroup(with: [first, other])
+        let store = CatalogStore(service: service)
+        store.refresh()
+        var outcomes: [String?] = []
+        store.setPrimaryVersion(other) { outcomes.append($0) }
+        await store.waitForOrganizationMutations()
+        #expect(outcomes.count == 1 && outcomes[0] == nil)
+        #expect(store.book(id: other.id)?.isPrimaryVersion == true)
+        try await context.database.dbQueue.write { db in
+            try db.execute(sql: "CREATE TRIGGER reject_card BEFORE UPDATE OF is_primary_version ON library_books BEGIN SELECT RAISE(ABORT, 'card rejected'); END")
+        }
+        store.setPrimaryVersion(first) { outcomes.append($0) }
+        await store.waitForOrganizationMutations()
+        #expect(outcomes.count == 2 && outcomes[1]?.contains("card rejected") == true)
+        #expect(store.book(id: other.id)?.isPrimaryVersion == true)
+    }
+
+    @MainActor
     @Test("rapid version label edits keep the latest value")
     func rapidVersionLabelEditsKeepLatestValue() async throws {
         let context = try makeContext()

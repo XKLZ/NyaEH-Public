@@ -210,13 +210,23 @@ struct SearchCollectionPopoverTests {
         #expect(SearchCollectionPopoverFocus.next(after: .member("1"), backwards: true, memberIDs: ids) == .details)
         #expect(SearchCollectionPopoverFocus.next(after: .details, backwards: true, memberIDs: ids) == .member("3"))
         #expect(SearchCollectionPopoverFocus.next(after: .member("removed"), backwards: false, memberIDs: ids) == .member("1"))
+        #expect(SearchCollectionPopoverFocus.next(after: .member("1"), backwards: false, memberIDs: ids,
+                                                   metadataIDs: ["1"]) == .metadata("1"))
+        #expect(SearchCollectionPopoverFocus.next(after: .metadata("1"), backwards: false, memberIDs: ids,
+                                                   metadataIDs: ["1"]) == .member("2"))
+        #expect(SearchCollectionPopoverFocus.next(after: .member("2"), backwards: true, memberIDs: ids,
+                                                   metadataIDs: ["1"]) == .metadata("1"))
+        #expect(SearchCollectionPopoverFocus.next(after: .metadata("1"), backwards: false, memberIDs: ids,
+                                                   metadataIDs: ["1"], showsReader: true) == .reader("1"))
+        #expect(SearchCollectionPopoverFocus.next(after: .reader("1"), backwards: false, memberIDs: ids,
+                                                   metadataIDs: ["1"], showsReader: true) == .member("2"))
         #expect(SearchCollectionPopoverFocus.next(after: nil, backwards: false, memberIDs: []) == .details)
     }
 
     @Test("popover fits narrow and short viewports and bounds scrolling")
     func sizing() {
         let large = SearchCollectionPopoverMetrics(viewport: CGSize(width: 1200, height: 900), memberCount: 30)
-        #expect(large.size == CGSize(width: 580, height: 540))
+        #expect(large.size == CGSize(width: 644, height: 540))
         #expect(large.columns == 4)
         let narrow = SearchCollectionPopoverMetrics(viewport: CGSize(width: 460, height: 300), memberCount: 20)
         #expect(narrow.size == CGSize(width: 428, height: 268))
@@ -227,6 +237,7 @@ struct SearchCollectionPopoverTests {
         let zero = SearchCollectionPopoverMetrics(viewport: .zero, memberCount: 0)
         #expect(zero.size == .zero)
         #expect(zero.cardWidth == 0)
+        #expect(zero.bookCardMetrics.contentWidth == 0)
         #expect(SearchCollectionPopoverMetrics.clampedOffset(270, contentHeight: 700, viewportHeight: 300) == 270)
         #expect(SearchCollectionPopoverMetrics.clampedOffset(270, contentHeight: 340, viewportHeight: 300) == 40)
         #expect(SearchCollectionPopoverMetrics.clampedOffset(-20, contentHeight: 200, viewportHeight: 300) == 0)

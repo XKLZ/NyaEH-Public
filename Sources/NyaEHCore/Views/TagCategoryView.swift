@@ -370,7 +370,7 @@ struct TagCategoryView: View {
                 localizer.string(
                     isSearchActive ? .tagSearchNoResults : (showsFollowedOnly ? .tagNoFollowed : .tagNoTags)
                 ),
-                systemImage: isSearchActive ? "magnifyingglass" : (showsFollowedOnly ? "star" : category.systemImage),
+                systemImage: isSearchActive ? "magnifyingglass" : (showsFollowedOnly ? "heart.fill" : category.systemImage),
                 description: Text(localizer.string(
                     isSearchActive ? .tagSearchNoResultsDescription
                         : (showsFollowedOnly ? .tagNoFollowedDescription : .tagNoTagsDescription)
@@ -940,9 +940,9 @@ private struct TagSummaryCard: View, Equatable {
 
     private var favoriteButton: some View {
         Button(action: onToggleFollowed) {
-            Image(systemName: tag.isFollowed ? "star.fill" : "star")
+            Image(systemName: tag.isFollowed ? "heart.fill" : "heart")
                 .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(tag.isFollowed ? .yellow : .primary)
+                .foregroundStyle(tag.isFollowed ? .red : .primary)
                 .frame(width: 32, height: 32)
                 .contentShape(Circle())
         }

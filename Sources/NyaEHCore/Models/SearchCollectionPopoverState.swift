@@ -116,9 +116,26 @@ final class SearchCollectionPopoverState {
 enum SearchCollectionPopoverFocus: Hashable {
     case details
     case member(LibraryBook.ID)
+    case metadata(LibraryBook.ID)
+    case reader(LibraryBook.ID)
 
-    static func next(after current: Self?, backwards: Bool, memberIDs: [LibraryBook.ID]) -> Self {
-        let targets: [Self] = memberIDs.map(Self.member) + [.details]
+    var memberID: LibraryBook.ID? {
+        switch self {
+        case .member(let id), .metadata(let id), .reader(let id): id
+        case .details: nil
+        }
+    }
+
+    static func next(
+        after current: Self?, backwards: Bool, memberIDs: [LibraryBook.ID],
+        metadataIDs: Set<LibraryBook.ID> = [], showsReader: Bool = false
+    ) -> Self {
+        let targets: [Self] = memberIDs.flatMap { id in
+            var row: [Self] = [.member(id)]
+            if metadataIDs.contains(id) { row.append(.metadata(id)) }
+            if showsReader { row.append(.reader(id)) }
+            return row
+        } + [.details]
         guard let current, let index = targets.firstIndex(of: current) else {
             return backwards ? targets[targets.count - 1] : targets[0]
         }
@@ -139,9 +156,9 @@ struct SearchCollectionPopoverMetrics: Equatable {
     let contentHeight: CGFloat
 
     var cardWidth: CGFloat { bookCardMetrics.cardWidth }
-    var memberHeight: CGFloat { bookCardMetrics.cardHeight }
+    let memberHeight: CGFloat
 
-    init(viewport: CGSize, memberCount: Int, cardMetrics: BookCardMetrics = .default) {
+    init(viewport: CGSize, memberCount: Int, cardMetrics: BookCardMetrics = .default, fields: BookCardFields = .all) {
         // 给四张当前尺寸的卡片及列间距留足宽度，窗口较窄时仍按可用空间换行。
         let fourColumnWidth = CGFloat(max(0, cardMetrics.width)) * 4 + Self.horizontalSpacing * 3 + 32
         let width = min(max(560, fourColumnWidth), max(0, viewport.width - 32))
@@ -151,7 +168,7 @@ struct SearchCollectionPopoverMetrics: Equatable {
         bookCardMetrics = BookCardMetrics(width: min(max(0, cardMetrics.width), Int(contentWidth)))
         columns = max(1, Int((contentWidth + Self.horizontalSpacing) / (bookCardMetrics.cardWidth + Self.horizontalSpacing)))
         let rows = max(1, Int(ceil(Double(max(0, memberCount)) / Double(columns))))
-        let memberHeight = bookCardMetrics.cardHeight
+        memberHeight = bookCardMetrics.cardHeight(for: fields)
         contentHeight = gridPadding * 2 + CGFloat(rows) * memberHeight + CGFloat(rows - 1) * Self.verticalSpacing
         // 向上取整并留少量空间，避免分数点尺寸及原生焦点滚动造成单排的轻微溢出。
         let naturalHeight = ceil(Self.headerHeight + Self.dividerHeight + contentHeight + 12)

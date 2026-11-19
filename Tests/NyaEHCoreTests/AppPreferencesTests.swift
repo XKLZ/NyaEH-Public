@@ -838,17 +838,18 @@ struct AppPreferencesTests {
         #expect(metrics.contentSpacing == 4)
     }
 
-    @Test("book card total height is derived from compact content")
+    @Test("book card fits a two-line title and three information rows")
     func bookCardTotalHeightIsDerivedFromCompactContent() {
         let metrics = BookCardMetrics.default
-        let expectedHeight = metrics.coverHeight
-            + metrics.titleHeight
-            + metrics.infoRowHeight
+        let expectedHeight = metrics.coverHeight + metrics.bottomInset
+            + metrics.regularTitleHeight
+            + metrics.infoRowHeight + metrics.metadataHeight
             + metrics.ratingHeight
-            + metrics.contentSpacing * 3
+            + metrics.contentSpacing * 2 + metrics.infoSpacing * 2
 
         #expect(metrics.cardHeight == expectedHeight)
-        #expect(metrics.cardHeight < metrics.coverHeight + 94)
+        #expect(metrics.cardWidth == 144)
+        #expect(metrics.coverHeight == 180)
     }
 
     @Test("book cover thumbnail uses fit only for landscape images")
@@ -937,7 +938,8 @@ struct AppPreferencesTests {
 
     @Test("work detail shelf carousel fits one card row")
     func workDetailShelfCarouselFitsOneCardRow() {
-        let metrics = BookCardMetrics(width: 152)
+        let metrics = WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: false)
+        #expect(metrics.cardWidth == 168)
         let height = WorkCharacterShelfMetrics.carouselHeight(metrics: metrics, usesDoubleRow: false)
 
         #expect(height >= metrics.cardHeight + WorkCharacterShelfMetrics.verticalCardPadding)
@@ -945,7 +947,8 @@ struct AppPreferencesTests {
 
     @Test("work detail shelf carousel fits double card rows")
     func workDetailShelfCarouselFitsDoubleCardRows() {
-        let metrics = BookCardMetrics(width: 120)
+        let metrics = WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: true)
+        #expect(metrics.cardWidth == 136)
         let height = WorkCharacterShelfMetrics.carouselHeight(metrics: metrics, usesDoubleRow: true)
         let expectedMinimum = metrics.cardHeight * 2
             + WorkCharacterShelfMetrics.doubleRowSpacing

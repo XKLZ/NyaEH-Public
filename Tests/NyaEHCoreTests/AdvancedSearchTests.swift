@@ -731,6 +731,42 @@ struct AdvancedSearchTests {
     }
 
     @MainActor
+    @Test("recent additions opens the complete edition search in descending import order")
+    func searchRecentlyAddedBooks() async throws {
+        let context = try makeContext()
+        let older = try context.books.insert(LibraryBook(title: "A", hash: "a", filepath: "/a.cbz", createdAt: 100))
+        let newer = try context.books.insert(LibraryBook(title: "Z", hash: "z", filepath: "/z.cbz", createdAt: 500))
+        _ = try context.versionGroups.createVersionGroup(bookIDs: [
+            try #require(older.databaseID), try #require(newer.databaseID)
+        ])
+        let store = CatalogStore(service: makeService(context))
+        store.advancedSearchText = "stale"
+        store.advancedSearchMode = .broad
+        store.advancedSearchScope = .marked
+        store.advancedSearchPage = 7
+        store.advancedSearchSortKey = .title
+        store.advancedSearchSortDirection = .ascending
+        store.isAdvancedSearchRegexEnabled = true
+        store.isCoverImageSearchActive = true
+        store.advancedSearchActiveTokenRange = NSRange(location: 0, length: 5)
+
+        store.searchRecentlyAddedBooks(isTagTranslationEnabled: false)
+        await waitForAdvancedSearch(store)
+
+        #expect(store.advancedSearchPage == 1)
+        #expect(store.advancedSearchText.isEmpty)
+        #expect(store.advancedSearchMode == .exact)
+        #expect(store.advancedSearchScope == .all)
+        #expect(store.advancedSearchSortKey == .added)
+        #expect(store.advancedSearchSortDirection == .descending)
+        #expect(store.advancedSearchShowsIndividualBooks)
+        #expect(!store.isAdvancedSearchRegexEnabled)
+        #expect(!store.isCoverImageSearchActive)
+        #expect(store.advancedSearchActiveTokenRange == nil)
+        #expect(store.advancedSearchResults.map(\.id) == [newer.id, older.id])
+    }
+
+    @MainActor
     @Test("store locally sorts advanced search results")
     func storeLocallySortsAdvancedSearchResults() async throws {
         let context = try makeContext()
@@ -1058,6 +1094,10 @@ struct AdvancedSearchTests {
         #expect(SearchSecondaryClickHitPolicy.accepts(eventType: .leftMouseDown, modifierFlags: .control))
         #expect(SearchSecondaryClickHitPolicy.accepts(eventType: .leftMouseUp, modifierFlags: .control))
 
+        #expect(!SearchSecondaryClickHitPolicy.accepts(eventType: .rightMouseDown, commandClickOnly: true))
+        #expect(!SearchSecondaryClickHitPolicy.accepts(eventType: .leftMouseDown, modifierFlags: .control, commandClickOnly: true))
+        #expect(SearchSecondaryClickHitPolicy.accepts(eventType: .leftMouseDown, modifierFlags: .command, commandClickOnly: true))
+        #expect(!SearchSecondaryClickHitPolicy.accepts(eventType: .leftMouseDown, modifierFlags: [.control, .command], commandClickOnly: true))
         #expect(!SearchSecondaryClickHitPolicy.accepts(eventType: .leftMouseDown))
         #expect(!SearchSecondaryClickHitPolicy.accepts(eventType: .leftMouseUp))
         #expect(!SearchSecondaryClickHitPolicy.accepts(eventType: .scrollWheel))

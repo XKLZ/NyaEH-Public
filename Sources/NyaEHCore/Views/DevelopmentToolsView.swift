@@ -3,6 +3,11 @@
 import SwiftUI
 
 struct DevelopmentToolsView: View {
+    let catalog: CatalogStore
+    let titleDisplayMode: BookTitleDisplayMode
+    let initialCardWidth: Int
+    let resolveLibraryRootURL: @MainActor () throws -> URL?
+    let onOpenRecentSearch: () -> Void
     let configuration: NyaEHDevelopmentConfiguration
     let localizer: AppLocalizer
     let readerDisplayPreferences: ReaderDisplayPreferences
@@ -15,7 +20,37 @@ struct DevelopmentToolsView: View {
     @State private var readerLaunchID: UUID?
     @State private var readerLaunchState: ReaderLaunchState = .idle
 
+    @State private var gallery: DevelopmentCardSamples?
+
+    @State private var shelves: DevelopmentShelfSession?
+
     var body: some View {
+        Group {
+            if let gallery {
+                VStack(alignment: .leading) {
+                    DevelopmentCardGallery(samples: gallery, archive: configuration.readerTestArchiveURL, localizer: localizer) {
+                        cancelReaderLaunchAndCloseWindow()
+                        self.gallery = nil
+                        readerLaunchState = .idle
+                    }
+                    if case .failed = readerLaunchState { readerStatus.padding(.horizontal) }
+                }
+            } else if let shelves {
+                VStack(alignment: .leading, spacing: 0) {
+                    DevelopmentShelfPreview(session: shelves, localizer: localizer, titleMode: titleDisplayMode,
+                                            initialWidth: initialCardWidth, onOpenRecentSearch: onOpenRecentSearch, back: closeShelves)
+                    if case .failed = readerLaunchState { readerStatus.padding(.horizontal) }
+                }
+            } else { tools }
+        }
+        .onDisappear {
+            cancelReaderLaunchAndCloseWindow()
+            gallery = nil
+            shelves = nil
+        }
+    }
+
+    private var tools: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -26,14 +61,24 @@ struct DevelopmentToolsView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                VStack(alignment: .leading, spacing: 12) {
+                    Label(localizer.string(.cardDisplay), systemImage: "rectangle.grid.2x2").font(.title2.bold())
+                    Button(localizer.string(.sampleGallery)) {
+                        readerLaunchState = .idle
+                        gallery = DevelopmentCardSamples(localizer: localizer) { book in openReader(sample: book) }
+                    }
+                }
+                Button(localizer.string(.shelfPreview)) {
+                    readerLaunchState = .idle
+                    shelves = DevelopmentShelfSession(catalog: catalog) { owner, book, fixture in
+                        openReader(sample: book, owner: owner, useLibraryArchive: !fixture)
+                    }
+                }
                 readerTestCard
             }
             .frame(maxWidth: 760, alignment: .leading)
             .padding(28)
             .frame(maxWidth: .infinity, alignment: .topLeading)
-        }
-        .onDisappear {
-            cancelReaderLaunchAndCloseWindow()
         }
     }
 
@@ -61,7 +106,7 @@ struct DevelopmentToolsView: View {
 
             readerStatus
 
-            Button(action: openReader) {
+            Button(action: { openReader() }) {
                 if readerLaunchState.isOpening {
                     ProgressView()
                         .controlSize(.small)
@@ -111,10 +156,20 @@ struct DevelopmentToolsView: View {
         }
     }
 
-    private func openReader() {
+    private func closeShelves() {
+        cancelReaderLaunchAndCloseWindow()
+        shelves = nil
+        readerLaunchState = .idle
+    }
+
+    private func openReader(sample: LibraryBook? = nil, owner: DevelopmentCardSamples? = nil,
+                            useLibraryArchive: Bool = false) {
+        let samples = owner ?? gallery
+        let page = sample.flatMap { samples?.readingState(for: $0)?.currentPageIndex } ?? 0
         readerLaunchTask?.cancel()
         let launchID = UUID()
-        let archiveURL = configuration.readerTestArchiveURL
+        let archiveURL = useLibraryArchive ? sample.map { URL(fileURLWithPath: $0.filepath) } : configuration.readerTestArchiveURL
+        guard let archiveURL else { return }
         readerLaunchID = launchID
         readerLaunchState = .opening
 
@@ -127,10 +182,12 @@ struct DevelopmentToolsView: View {
             }
 
             do {
+                let root = useLibraryArchive ? try resolveLibraryRootURL() : nil
+                if useLibraryArchive && root == nil { throw NyaEHError.libraryFolderPermissionRequired }
                 let session = try await Task.detached(priority: .userInitiated) {
                     try ReaderArchiveSession(
                         archiveURL: archiveURL,
-                        securityScopedRootURL: nil
+                        securityScopedRootURL: root
                     )
                 }.value
                 guard !Task.isCancelled, readerLaunchID == launchID else {
@@ -143,17 +200,23 @@ struct DevelopmentToolsView: View {
                 }
 
                 readerWindowPresenter.show(
-                    title: archiveURL.deletingPathExtension().lastPathComponent,
+                    title: sample?.title ?? archiveURL.deletingPathExtension().lastPathComponent,
                     pages: [],
-                    initialPageID: 0,
+                    initialPageID: min(page, max(0, pageCount - 1)),
                     totalPages: pageCount,
                     localizer: localizer,
                     archiveSession: session,
                     displayPreferences: readerDisplayPreferences,
-                    onDisplayPreferencesChange: onReaderDisplayPreferencesChange,
+                    onDisplayPreferencesChange: { value in
+                        if owner == nil { onReaderDisplayPreferencesChange(value) }
+                    },
                     savedWindowFrame: savedReaderWindowFrame,
-                    onWindowFrameChange: onReaderWindowFrameChange,
-                    onProgress: { _, _, _ in },
+                    onWindowFrameChange: { frame in
+                        if owner == nil { onReaderWindowFrameChange(frame) }
+                    },
+                    onProgress: { index, total, completed in
+                        if let sample { samples?.updateProgress(book: sample, page: index, total: total, completed: completed) }
+                    },
                     onFlushProgress: {}
                 )
                 readerLaunchState = .opened(pageCount)

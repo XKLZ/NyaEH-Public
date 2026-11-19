@@ -891,7 +891,7 @@ private struct WorkDetailLazySectionPlaceholder: View {
     let usesDoubleRow: Bool
 
     private var metrics: BookCardMetrics {
-        BookCardMetrics(width: usesDoubleRow ? 120 : 152)
+        WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: usesDoubleRow)
     }
 
     var body: some View {
@@ -1501,8 +1501,10 @@ private struct WorkCharacterShelf: View {
         )
     }
 
+    @Environment(\.bookCardFields) private var cardFields
+
     private var metrics: BookCardMetrics {
-        BookCardMetrics(width: usesDoubleRow ? 120 : 152)
+        WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: usesDoubleRow)
     }
 
     private var columnCount: Int {
@@ -1518,7 +1520,7 @@ private struct WorkCharacterShelf: View {
     }
 
     private var carouselHeight: CGFloat {
-        WorkCharacterShelfMetrics.carouselHeight(metrics: metrics, usesDoubleRow: usesDoubleRow)
+        WorkCharacterShelfMetrics.carouselHeight(metrics: metrics, usesDoubleRow: usesDoubleRow, fields: cardFields)
     }
 
     private var maxForwardIndex: Int {
@@ -1589,9 +1591,9 @@ private struct WorkCharacterShelf: View {
                                         titleDisplayMode: titleDisplayMode,
                                         localizer: localizer,
                                         metrics: metrics,
-                                        action: { onSelectBook(book) }
+                                        action: onSelectBook
                                     )
-                                    .overlay(alignment: .topTrailing) {
+                                    .overlay(alignment: .topLeading) {
                                         if let bookID = book.databaseID,
                                            let claim = section.claimsByBookID[bookID],
                                            claim.source == .automatic {
@@ -1859,8 +1861,10 @@ private struct CharacterWorkShelf: View {
         )
     }
 
+    @Environment(\.bookCardFields) private var cardFields
+
     private var metrics: BookCardMetrics {
-        BookCardMetrics(width: usesDoubleRow ? 120 : 152)
+        WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: usesDoubleRow)
     }
 
     private var columnCount: Int {
@@ -1876,7 +1880,7 @@ private struct CharacterWorkShelf: View {
     }
 
     private var carouselHeight: CGFloat {
-        WorkCharacterShelfMetrics.carouselHeight(metrics: metrics, usesDoubleRow: usesDoubleRow)
+        WorkCharacterShelfMetrics.carouselHeight(metrics: metrics, usesDoubleRow: usesDoubleRow, fields: cardFields)
     }
 
     private var maxForwardIndex: Int {
@@ -1962,9 +1966,9 @@ private struct CharacterWorkShelf: View {
                                             titleDisplayMode: titleDisplayMode,
                                             localizer: localizer,
                                             metrics: metrics,
-                                            action: { onSelectBook(book) }
+                                            action: onSelectBook
                                         )
-                                        .overlay(alignment: .topTrailing) {
+                                        .overlay(alignment: .topLeading) {
                                             if let bookID = book.databaseID,
                                                let claim = section.claimsByBookID[bookID],
                                                claim.source == .automatic {
@@ -2056,7 +2060,7 @@ private struct CharacterWorkShelfPlaceholder: View {
     let usesDoubleRow: Bool
 
     private var metrics: BookCardMetrics {
-        BookCardMetrics(width: usesDoubleRow ? 120 : 152)
+        WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: usesDoubleRow)
     }
 
     var body: some View {
@@ -2110,14 +2114,18 @@ private struct CharacterWorkShelfPlaceholder: View {
 }
 
 enum WorkCharacterShelfMetrics {
+    static func cardMetrics(usesDoubleRow: Bool) -> BookCardMetrics {
+        BookCardMetrics(width: usesDoubleRow ? 136 : 168)
+    }
+
     static let verticalCardPadding: CGFloat = 20
     static let doubleRowSpacing: CGFloat = 12
 
-    static func carouselHeight(metrics: BookCardMetrics, usesDoubleRow: Bool) -> CGFloat {
+    static func carouselHeight(metrics: BookCardMetrics, usesDoubleRow: Bool, fields: BookCardFields = .all) -> CGFloat {
         if usesDoubleRow {
-            return metrics.cardHeight * 2 + doubleRowSpacing + verticalCardPadding
+            return metrics.cardHeight(for: fields) * 2 + doubleRowSpacing + verticalCardPadding
         }
-        return metrics.cardHeight + verticalCardPadding
+        return metrics.cardHeight(for: fields) + verticalCardPadding
     }
 }
 

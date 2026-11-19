@@ -1,13 +1,12 @@
 // 本文件实现首页推荐和洞察区域，主要消费 HomeStore 预先构建的派生书籍集合。
 
-import AppKit
 import SwiftUI
 
 private let homeContentPadding: CGFloat = 24
-private let homeShelfBandHorizontalPadding: CGFloat = 26
 
 struct LibraryHomeView: View {
     @Bindable var store: HomeStore
+    let pageIsActive: Bool
     let isTagTranslationEnabled: Bool
     let titleDisplayMode: BookTitleDisplayMode
     @Binding var cardWidth: Int
@@ -15,106 +14,58 @@ struct LibraryHomeView: View {
     let localizer: AppLocalizer
     let onSelect: (LibraryBook) -> Void
     let onOpenFavorites: () -> Void
-    let onOpenSearchScope: (BookSearchScope) -> Void
-    let onOpenCollections: () -> Void
+    let onOpenRecentSearch: () -> Void
     let onSelectInsightTag: (TagDisplaySummary) -> Void
 
-    private var cardMetrics: BookCardMetrics {
-        BookCardMetrics(width: cardWidth)
-    }
-
     private var hasCards: Bool {
-        !store.catalog.continueReadingBooks.isEmpty
-            || !store.catalog.recentlyViewedBooks.isEmpty
-            || !store.catalog.recommendedBooks.isEmpty
-            || !store.catalog.markedPreviewBooks.isEmpty
+        !store.catalog.homeFavoritePreview.books.isEmpty
             || !store.catalog.recentlyAddedBooks.isEmpty
     }
 
+    let onImport: () -> Void
+
     var body: some View {
         GeometryReader { proxy in
-                let leadingBleed = max(proxy.frame(in: .global).minX, 0)
+            let catalog = store.catalog
+            let books = HomeShowcaseBooks(continuing: catalog.continueReadingBooks, recent: catalog.recentlyViewedBooks,
+                                          recommended: catalog.recommendedBooks)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 26) {
+                    if catalog.books.isEmpty {
+                        ContentUnavailableView {
+                            Label(localizer.string(.noBooks), systemImage: "books.vertical")
+                        } description: {
+                            Text(localizer.string(.importedBooksDescription))
+                        } actions: {
+                            Button(localizer.string(.importLibrary), action: onImport)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 240)
+                    } else {
+                        if books.resolve(nil) != nil {
+                            HomeBookShowcase(books: books, catalog: catalog, pageIsActive: pageIsActive,
+                                             titleMode: titleDisplayMode, localizer: localizer,
+                                             translatesTags: isTagTranslationEnabled, onSelect: onSelect)
+                                .frame(height: proxy.size.height / 2)
+                        }
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 30) {
-                        HomeWelcomeOverview(
-                            totalBooks: store.catalog.books.count,
-                            favoriteBooks: store.catalog.favoriteManagementBooks.count,
-                            recentlyViewedBooks: store.catalog.recentlyViewedBooks.count,
-                            collections: store.catalog.collections.count,
-                            charts: store.catalog.homeInsightCharts,
-                            isLoadingCharts: store.catalog.isLoadingHomeInsightCharts,
-                            chartError: store.catalog.homeInsightChartError,
-                            isChartsExpanded: $isInsightChartsExpanded,
-                            localizer: localizer,
-                            onOpenScope: onOpenSearchScope,
-                            onOpenCollections: onOpenCollections,
-                            onSelectTag: onSelectInsightTag
-                        )
+                        HomeCollectionPanels(favorites: catalog.homeFavoritePreview,
+                                             days: catalog.homeArrivalDays, height: proxy.size.height / 2,
+                                             cardWidth: cardWidth, titleMode: titleDisplayMode, localizer: localizer,
+                                             onSelect: onSelect, onFavorites: onOpenFavorites, onSearch: onOpenRecentSearch)
 
-                        HomeShelfSection(
-                            title: localizer.string(.readerContinue),
-                            books: store.catalog.continueReadingBooks,
-                            titleDisplayMode: titleDisplayMode,
-                            metrics: cardMetrics,
-                            leadingBleed: leadingBleed,
-                            localizer: localizer,
-                            onSelect: onSelect,
-                            action: HomeShelfAction(
-                                title: localizer.string(.readerContinue),
-                                systemImage: "arrow.forward.circle",
-                                perform: { onOpenSearchScope(.continueReading) }
-                            )
-                        )
-
-                        HomeShelfSection(
-                            title: localizer.string(.recentlyViewed),
-                            books: store.catalog.recentlyViewedBooks,
-                            titleDisplayMode: titleDisplayMode,
-                            metrics: cardMetrics,
-                            leadingBleed: leadingBleed,
-                            localizer: localizer,
-                            onSelect: onSelect
-                        )
-
-                        HomeShelfSection(
-                            title: localizer.string(.todayRecommendations),
-                            books: store.catalog.recommendedBooks,
-                            titleDisplayMode: titleDisplayMode,
-                            metrics: cardMetrics,
-                            leadingBleed: leadingBleed,
-                            localizer: localizer,
-                            onSelect: onSelect
-                        )
-
-                        HomeShelfSection(
-                            title: localizer.string(.myFavorites),
-                            books: store.catalog.markedPreviewBooks,
-                            titleDisplayMode: titleDisplayMode,
-                            metrics: cardMetrics,
-                            leadingBleed: leadingBleed,
-                            localizer: localizer,
-                            onSelect: onSelect,
-                            action: HomeShelfAction(
-                                title: localizer.string(.favoriteManagement),
-                                systemImage: "arrow.forward.circle",
-                                perform: onOpenFavorites
-                            )
-                        )
-
-                        HomeShelfSection(
-                            title: localizer.string(.recentlyAdded),
-                            books: store.catalog.recentlyAddedBooks,
-                            titleDisplayMode: titleDisplayMode,
-                            metrics: cardMetrics,
-                            leadingBleed: leadingBleed,
-                            localizer: localizer,
-                            onSelect: onSelect
-                        )
+                        HomeInsights(charts: catalog.homeInsightCharts,
+                                     isLoadingCharts: catalog.isLoadingHomeInsightCharts, chartError: catalog.homeInsightChartError,
+                                     isChartsExpanded: $isInsightChartsExpanded, localizer: localizer, onSelectTag: onSelectInsightTag)
+                            .task(id: "\(isTagTranslationEnabled)-\(catalog.tagSummaryRevision)-\(isInsightChartsExpanded)") {
+                                if isInsightChartsExpanded {
+                                    catalog.loadHomeInsightCharts(isTagTranslationEnabled: isTagTranslationEnabled)
+                                }
+                            }
                     }
-                    .padding(homeContentPadding)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .padding(homeContentPadding)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .overlay(alignment: .bottomTrailing) {
             if hasCards {
@@ -128,12 +79,6 @@ struct LibraryHomeView: View {
         }
         .navigationTitle(localizer.string(.home))
         .focusedSceneValue(\.nyaehViewCommands, viewCommandContext)
-        .task(id: "\(isTagTranslationEnabled)-\(store.catalog.tagSummaryRevision)-\(isInsightChartsExpanded)") {
-            guard isInsightChartsExpanded else {
-                return
-            }
-            store.catalog.loadHomeInsightCharts(isTagTranslationEnabled: isTagTranslationEnabled)
-        }
     }
 
     private var viewCommandContext: NyaEHViewCommandContext {
@@ -154,85 +99,32 @@ struct LibraryHomeView: View {
     }
 }
 
-private struct HomeWelcomeOverview: View {
-    let totalBooks: Int
-    let favoriteBooks: Int
-    let recentlyViewedBooks: Int
-    let collections: Int
+private struct HomeInsights: View {
     let charts: HomeInsightCharts
     let isLoadingCharts: Bool
     let chartError: String?
     @Binding var isChartsExpanded: Bool
     let localizer: AppLocalizer
-    let onOpenScope: (BookSearchScope) -> Void
-    let onOpenCollections: () -> Void
     let onSelectTag: (TagDisplaySummary) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 28) {
-            headlineBlock
-
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
-                    statTiles
-                }
-                .frame(maxWidth: 748)
-                .frame(maxWidth: .infinity, alignment: .center)
-
-                LazyVGrid(
-                    columns: Array(
-                        repeating: GridItem(.flexible(minimum: 128, maximum: 178), spacing: 12, alignment: .center),
-                        count: 2
-                    ),
-                    alignment: .center,
-                    spacing: 12
-                ) {
-                    statTiles
-                }
-                .frame(maxWidth: 368)
-                .frame(maxWidth: .infinity, alignment: .center)
-            }
-
-            HomeInsightRevealContainer(isExpanded: isChartsExpanded) {
-                insightGrid
-            }
-        }
-        .padding(.horizontal, 34)
-        .padding(.vertical, 34)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(.secondary.opacity(0.14), lineWidth: 1)
-        }
-    }
-
-    private var headlineBlock: some View {
-        HStack(alignment: .center, spacing: 16) {
-            Text(localizer.string(.welcomeBack))
-                .font(.system(.largeTitle, design: .rounded).weight(.bold))
-                .multilineTextAlignment(.leading)
-
-            Spacer(minLength: 16)
-
+        VStack(alignment: .leading, spacing: 14) {
             Button {
-                withAnimation(.smooth(duration: 0.32)) {
-                    isChartsExpanded.toggle()
-                }
+                withAnimation(.smooth(duration: 0.32)) { isChartsExpanded.toggle() }
             } label: {
-                Label(
-                    localizer.string(isChartsExpanded ? .collapseSection : .expandSection),
-                    systemImage: isChartsExpanded ? "chevron.up.circle" : "chevron.down.circle"
-                )
+                HStack {
+                    Text(localizer.string(.homeInsights)).font(.title2.weight(.semibold))
+                    Spacer()
+                    Image(systemName: isChartsExpanded ? "chevron.up" : "chevron.down")
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
             }
-            .labelStyle(.iconOnly)
-            .font(.title3.weight(.semibold))
-            .buttonStyle(.borderless)
-            .controlSize(.large)
-            .help(localizer.string(isChartsExpanded ? .collapseSection : .expandSection))
+            .buttonStyle(.plain)
+            HomeInsightRevealContainer(isExpanded: isChartsExpanded) { insightGrid }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
+
 
     private var insightGrid: some View {
         ViewThatFits(in: .horizontal) {
@@ -270,34 +162,6 @@ private struct HomeWelcomeOverview: View {
         .frame(maxWidth: .infinity)
     }
 
-    private var statTiles: some View {
-        Group {
-            HomeStatTile(
-                systemImage: "books.vertical",
-                title: localizer.string(.libraryStatsTotalBooks),
-                value: totalBooks,
-                action: { onOpenScope(.all) }
-            )
-            HomeStatTile(
-                systemImage: "star.fill",
-                title: localizer.string(.libraryStatsFavorites),
-                value: favoriteBooks,
-                action: { onOpenScope(.marked) }
-            )
-            HomeStatTile(
-                systemImage: "eye.fill",
-                title: localizer.string(.libraryStatsRecentlyViewed),
-                value: recentlyViewedBooks,
-                action: { onOpenScope(.continueReading) }
-            )
-            HomeStatTile(
-                systemImage: "rectangle.stack.fill",
-                title: localizer.string(.libraryStatsCollections),
-                value: collections,
-                action: onOpenCollections
-            )
-        }
-    }
 }
 
 private struct HomeInsightRevealContainer<Content: View>: View {
@@ -382,39 +246,6 @@ private struct HomeInsightRevealHeightKey: PreferenceKey {
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
-    }
-}
-
-private struct HomeStatTile: View {
-    let systemImage: String
-    let title: String
-    let value: Int
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 7) {
-                Image(systemName: systemImage)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                Text(value.formatted())
-                    .font(.title2.weight(.semibold))
-                    .monospacedDigit()
-
-                Text(title)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
-        .contentShape(RoundedRectangle(cornerRadius: 10))
-        .accessibilityLabel("\(title), \(value)")
     }
 }
 
@@ -529,7 +360,7 @@ private struct HomeInsightChartRow: View {
     }
 }
 
-private struct HomeShelfSection: View {
+struct HomeShelfSection: View {
     let title: String
     let books: [LibraryBook]
     let titleDisplayMode: BookTitleDisplayMode
@@ -538,25 +369,20 @@ private struct HomeShelfSection: View {
     let localizer: AppLocalizer
     let onSelect: (LibraryBook) -> Void
     var action: HomeShelfAction? = nil
-
+    let position: HomeShelfPosition
+    var exhibitGutter: CGFloat? = nil
+    @Environment(\.nyaehAccentColor) private var accent
     @State private var scrollPosition = ScrollPosition()
-    @State private var scrollState = HomeShelfScrollState()
-    @State private var isHoveringCarousel = false
-
-    private var showsBackwardArrow: Bool {
-        isHoveringCarousel && scrollState.canScrollBackward
-    }
-
-    private var showsForwardArrow: Bool {
-        isHoveringCarousel && scrollState.canScrollForward
-    }
-
+    @State private var edges = HomeShelfEdges()
+    @State private var needsRestore = true
     private var leadingBandBleed: CGFloat {
         leadingBleed + homeContentPadding
     }
 
+    @Environment(\.bookCardFields) private var cardFields
+
     private var carouselBandHeight: CGFloat {
-        metrics.cardHeight + 28
+        metrics.cardHeight(for: cardFields) + 28
     }
 
     var body: some View {
@@ -575,15 +401,27 @@ private struct HomeShelfSection: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                 }
+                if exhibitGutter == nil && (edges.backward || edges.forward) {
+                    ControlGroup {
+                        Button { scroll(by: -scrollPageDistance) } label: {
+                            Label(localizer.string(.previousPage), systemImage: "chevron.left")
+                        }
+                        .help(localizer.string(.previousPage))
+                        .disabled(!edges.backward)
+                        Button { scroll(by: scrollPageDistance) } label: {
+                            Label(localizer.string(.nextPage), systemImage: "chevron.right")
+                        }
+                        .help(localizer.string(.nextPage))
+                        .disabled(!edges.forward)
+                    }
+                    .labelStyle(.iconOnly)
+                    .controlSize(.small)
+                }
             }
+            .padding(.leading, exhibitGutter ?? 0)
 
-            if books.isEmpty {
-                ContentUnavailableView(
-                    localizer.string(.noBooks),
-                    systemImage: "books.vertical",
-                    description: Text(localizer.string(.importedBooksDescription))
-                )
-                .frame(minHeight: 180)
+            if let gutter = exhibitGutter {
+                exhibitionBand(gutter: gutter)
             } else {
                 carouselBand
             }
@@ -594,100 +432,100 @@ private struct HomeShelfSection: View {
         GeometryReader { geometry in
             let bandWidth = geometry.size.width + leadingBandBleed + homeContentPadding
 
-            ZStack(alignment: .leading) {
-                extendedCarouselLayer(bandWidth: bandWidth)
-                    .zIndex(0)
-
-                carouselControlsOverlay(width: geometry.size.width)
-                    .zIndex(1)
-            }
-            .frame(width: geometry.size.width, height: carouselBandHeight, alignment: .leading)
-            .contentShape(Rectangle())
-            .onHover { isHovering in
-                isHoveringCarousel = isHovering
-            }
+            scrollingBooks(leadingInset: leadingBandBleed, trailingInset: homeContentPadding)
+                .frame(width: bandWidth, height: carouselBandHeight, alignment: .leading)
+                .homeShelfScrollClipDisabled()
+                .homeShelfHorizontalExtension()
+                .offset(x: -leadingBandBleed)
+                .frame(width: geometry.size.width, height: carouselBandHeight, alignment: .leading)
         }
         .frame(height: carouselBandHeight)
-        .onChange(of: books.map(\.id)) { _, _ in
-            scrollState = .init()
-            scrollPosition.scrollTo(edge: .leading)
-        }
+        .onDisappear { needsRestore = true }
     }
 
-    private func extendedCarouselLayer(bandWidth: CGFloat) -> some View {
+    private func exhibitionBand(gutter: CGFloat) -> some View {
+        scrollingBooks(leadingInset: 0, trailingInset: 0)
+            .frame(height: carouselBandHeight)
+            .padding(.horizontal, gutter)
+            .background(alignment: .bottom) {
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, accent.opacity(0.09)], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 44)
+                    Rectangle().fill(.primary.opacity(0.14)).frame(height: 3)
+                        .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.45)).frame(height: 1) }
+                        .shadow(color: .black.opacity(0.16), radius: 2, y: 2)
+                }
+                .padding(.horizontal, max(0, gutter - 8))
+                .padding(.bottom, 9)
+                .allowsHitTesting(false).accessibilityHidden(true)
+            }
+            .overlay(alignment: .leading) { if gutter > 0 { sideArrow(forward: false) } }
+            .overlay(alignment: .trailing) { if gutter > 0 { sideArrow(forward: true) } }
+            .onDisappear { needsRestore = true }
+    }
+
+    private func sideArrow(forward: Bool) -> some View {
+        let enabled = forward ? edges.forward : edges.backward
+        let label = localizer.string(forward ? .nextPage : .previousPage)
+        return Button { scroll(by: forward ? scrollPageDistance : -scrollPageDistance) } label: {
+            Image(systemName: forward ? "chevron.right" : "chevron.left")
+                .font(.system(size: 18, weight: .medium))
+                .frame(width: 28, height: 52)
+                .background(.primary.opacity(0.09), in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.45)
+        .help(label).accessibilityLabel(label)
+    }
+
+    private func scrollingBooks(leadingInset: CGFloat, trailingInset: CGFloat) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(alignment: .top, spacing: 18) {
-                ForEach(Array(books.enumerated()), id: \.element.id) { _, book in
-                    BookCardButton(
-                        book: book,
-                        titleDisplayMode: titleDisplayMode,
-                        localizer: localizer,
-                        metrics: metrics,
-                        action: {
-                            onSelect(book)
-                        }
-                    )
-                    .id(book.id)
+            LazyHStack(alignment: .top, spacing: BookCardMetrics.shelfSpacing) {
+                ForEach(books) { book in
+                    BookCardButton(book: book, titleDisplayMode: titleDisplayMode, localizer: localizer,
+                                   metrics: metrics, action: onSelect)
+                        .id(book.id)
                 }
             }
             .padding(.vertical, 14)
-            .padding(.leading, leadingBandBleed + homeShelfBandHorizontalPadding)
-            .padding(.trailing, homeShelfBandHorizontalPadding)
+            .padding(.leading, leadingInset)
+            .padding(.trailing, trailingInset)
         }
         .scrollPosition($scrollPosition)
         .onScrollGeometryChange(for: HomeShelfScrollState.self) { geometry in
             HomeShelfScrollState(geometry: geometry)
         } action: { _, newState in
-            scrollState = newState
+            guard newState.maxOffsetX > 0 else {
+                edges = HomeShelfEdges()
+                if exhibitGutter != nil { position.geometry = newState }
+                return
+            }
+            if needsRestore {
+                needsRestore = false
+                if position.geometry.offsetX > 0 {
+                    let target = min(position.geometry.offsetX, newState.maxOffsetX)
+                    if abs(newState.offsetX - target) > 1 {
+                        scrollPosition.scrollTo(x: target)
+                        return
+                    }
+                }
+            }
+            position.geometry = newState
+            let newEdges = HomeShelfEdges(backward: newState.canScrollBackward, forward: newState.canScrollForward)
+            if edges != newEdges { edges = newEdges }
         }
-        .frame(width: bandWidth, height: carouselBandHeight, alignment: .leading)
-        .background(HiddenHorizontalScrollerAccessor())
         .scrollIndicators(.hidden, axes: .horizontal)
-        .homeShelfScrollClipDisabled()
-        .homeShelfHorizontalExtension()
-        .background(HomeSidebarBleedAccessor())
-        .offset(x: -leadingBandBleed)
-    }
-
-    private func carouselControlsOverlay(width: CGFloat) -> some View {
-        HStack {
-            CarouselArrowButton(
-                systemImage: "chevron.left",
-                help: localizer.string(.previousPage)
-            ) {
-                scroll(by: -scrollPageDistance)
-            }
-            .opacity(showsBackwardArrow ? 1 : 0)
-            .scaleEffect(showsBackwardArrow ? 1 : 0.92)
-            .allowsHitTesting(showsBackwardArrow)
-
-            Spacer()
-
-            CarouselArrowButton(
-                systemImage: "chevron.right",
-                help: localizer.string(.nextPage)
-            ) {
-                scroll(by: scrollPageDistance)
-            }
-            .opacity(showsForwardArrow ? 1 : 0)
-            .scaleEffect(showsForwardArrow ? 1 : 0.92)
-            .allowsHitTesting(showsForwardArrow)
-        }
-        .padding(.horizontal, 28)
-        .offset(y: -34)
-        .frame(width: width, height: carouselBandHeight, alignment: .center)
-        .allowsHitTesting(showsBackwardArrow || showsForwardArrow)
-        .animation(.easeInOut(duration: 0.16), value: showsBackwardArrow)
-        .animation(.easeInOut(duration: 0.16), value: showsForwardArrow)
     }
 
     private var scrollPageDistance: CGFloat {
-        (metrics.cardWidth + 18) * 3
+        (metrics.cardWidth + BookCardMetrics.shelfSpacing) * 3
     }
 
     private func scroll(by offset: CGFloat) {
-        let targetOffset = min(max(scrollState.offsetX + offset, 0), scrollState.maxOffsetX)
-        scrollState = scrollState.updatingOffset(targetOffset)
+        let geometry = position.geometry
+        let targetOffset = min(max(geometry.offsetX + offset, 0), geometry.maxOffsetX)
         withAnimation(.snappy(duration: 0.32)) {
             scrollPosition.scrollTo(x: targetOffset)
         }
@@ -721,15 +559,30 @@ private struct HomeShelfScrollState: Equatable {
         )
     }
 
-    func updatingOffset(_ offsetX: CGFloat) -> HomeShelfScrollState {
-        HomeShelfScrollState(
-            offsetX: min(max(offsetX, 0), maxOffsetX),
-            maxOffsetX: maxOffsetX
-        )
+}
+
+private struct HomeShelfEdges: Equatable {
+    var backward = false
+    var forward = false
+}
+
+// Scroll callbacks update this reference without invalidating the shelf or its cards.
+final class HomeShelfPosition {
+    fileprivate var geometry = HomeShelfScrollState()
+}
+
+final class HomeShelfPositions {
+    private var saved: [L10nKey: HomeShelfPosition] = [:]
+
+    func position(for key: L10nKey) -> HomeShelfPosition {
+        if let existing = saved[key] { return existing }
+        let position = HomeShelfPosition()
+        saved[key] = position
+        return position
     }
 }
 
-private struct HomeShelfAction {
+struct HomeShelfAction {
     let title: String
     let systemImage: String
     let perform: () -> Void
@@ -753,123 +606,5 @@ private extension View {
         } else {
             self
         }
-    }
-}
-
-private struct HiddenHorizontalScrollerAccessor: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        DispatchQueue.main.async {
-            hideHorizontalScroller(from: view)
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            hideHorizontalScroller(from: nsView)
-        }
-    }
-
-    private func hideHorizontalScroller(from view: NSView) {
-        guard let scrollView = view.enclosingScrollView ?? view.firstAncestor(ofType: NSScrollView.self) else {
-            return
-        }
-
-        scrollView.hasHorizontalScroller = false
-        scrollView.horizontalScroller = nil
-        scrollView.autohidesScrollers = true
-        scrollView.scrollerStyle = .overlay
-    }
-}
-
-private struct HomeSidebarBleedAccessor: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        DispatchQueue.main.async {
-            allowSidebarBleed(from: view)
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            allowSidebarBleed(from: nsView)
-        }
-    }
-
-    private func allowSidebarBleed(from view: NSView) {
-        guard #available(macOS 26.0, *) else {
-            return
-        }
-
-        if let contentView = view.window?.contentView {
-            allowOverflow(in: contentView, remainingDepth: 12)
-        }
-
-        var current: NSView? = view
-        var remainingAncestorHops = 18
-        while let candidate = current, remainingAncestorHops > 0 {
-            allowOverflow(on: candidate)
-
-            if candidate === candidate.window?.contentView {
-                break
-            }
-
-            current = candidate.superview
-            remainingAncestorHops -= 1
-        }
-    }
-
-    private func allowOverflow(in view: NSView, remainingDepth: Int) {
-        guard remainingDepth >= 0 else {
-            return
-        }
-
-        allowOverflow(on: view)
-        for subview in view.subviews {
-            allowOverflow(in: subview, remainingDepth: remainingDepth - 1)
-        }
-    }
-
-    private func allowOverflow(on view: NSView) {
-        view.clipsToBounds = false
-        view.layer?.masksToBounds = false
-    }
-}
-
-private extension NSView {
-    func firstAncestor<T: NSView>(ofType type: T.Type) -> T? {
-        var current = superview
-        while let view = current {
-            if let match = view as? T {
-                return match
-            }
-            current = view.superview
-        }
-        return nil
-    }
-}
-
-private struct CarouselArrowButton: View {
-    let systemImage: String
-    let help: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.primary)
-                .frame(width: 36, height: 36)
-                .background(.regularMaterial, in: Circle())
-                .overlay {
-                    Circle()
-                        .strokeBorder(.secondary.opacity(0.18))
-                }
-                .shadow(color: .black.opacity(0.16), radius: 8, x: 0, y: 3)
-        }
-        .buttonStyle(.plain)
-        .help(help)
     }
 }

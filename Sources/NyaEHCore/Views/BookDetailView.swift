@@ -36,10 +36,7 @@ struct BookDetailView: View {
     @State private var resolvedThemeColors: [LibraryBook.ID: NSColor] = [:]
     @State private var displayedBackgroundThemeColor = BookDetailThemeColorPolicy.safeFallbackColor
     @State private var heroTitleColumnHeight = BookDetailHeroMotionMetrics.defaultExpandedTitleColumnHeight
-    @State private var readerWindowPresenter = ModernBookReaderWindowPresenter()
-    @State private var readerLaunchTask: Task<Void, Never>?
-    @State private var launchingReaderBookID: LibraryBook.ID?
-    @State private var readerLaunchID: UUID?
+    @State private var readerLauncher = BookReaderLauncher()
     // 详情页会在导航转场后再挂载重内容；session token 防止旧异步任务在用户切到另一本书后回写状态。
     @State private var deferredSectionsBookID: LibraryBook.ID?
     @State private var detailSession = BookDetailSessionToken.inactive
@@ -111,7 +108,7 @@ struct BookDetailView: View {
             localizer: localizer,
             titleColumnHeight: heroTitleColumnHeight,
             readingActionTitleKey: readingActionTitleKey,
-            isLaunchingReader: launchingReaderBookID == book.id,
+            isLaunchingReader: readerLauncher.launchingReaderBookID == book.id,
             onCycleTitle: cycleTitleMode,
             onCopyTitle: { copyBookTitle(title) },
             onOpenReader: {
@@ -255,7 +252,7 @@ struct BookDetailView: View {
             }
         }
         .onChange(of: store.catalog.deletingBookIDs) { _, ids in
-            if let id = book.databaseID, ids.contains(id) { cancelReaderLaunchAndCloseWindow() }
+            if let id = book.databaseID, ids.contains(id) { readerLauncher.cancelReaderLaunchAndCloseWindow() }
         }
         .onChange(of: titleDisplayMode) { _, _ in
             localTitleMode = nil
@@ -287,7 +284,7 @@ struct BookDetailView: View {
                 localizer: localizer,
                 onCancel: { isDeleteBookConfirmationPresented = false },
                 onDelete: {
-                    cancelReaderLaunchAndCloseWindow()
+                    readerLauncher.cancelReaderLaunchAndCloseWindow()
                     Task { @MainActor in
                         do {
                             let root = try resolveLibraryRootURL()
@@ -335,7 +332,7 @@ struct BookDetailView: View {
     }
 
     private func resetEphemeralDetailState() {
-        cancelReaderLaunchAndCloseWindow()
+        readerLauncher.cancelReaderLaunchAndCloseWindow()
         localTitleMode = nil
         displayTags = []
         clearActiveTagExplanation()
@@ -347,7 +344,7 @@ struct BookDetailView: View {
     }
 
     private func resetEphemeralDetailStateForBookReplacement(nextBookID: LibraryBook.ID) {
-        cancelReaderLaunchAndCloseWindow()
+        readerLauncher.cancelReaderLaunchAndCloseWindow()
         localTitleMode = nil
         clearActiveTagExplanation()
         tagPillFrames = [:]
@@ -391,75 +388,12 @@ struct BookDetailView: View {
         initialPageID: Int,
         seedPages: [BookReaderLoadedPage]
     ) {
-        readerLaunchTask?.cancel()
-        let expectedBookID = book.id
-        let launchID = UUID()
-        let archiveURL = URL(fileURLWithPath: book.filepath)
-        launchingReaderBookID = expectedBookID
-        readerLaunchID = launchID
-        readerLaunchTask = Task { @MainActor in
-            defer {
-                if readerLaunchID == launchID {
-                    launchingReaderBookID = nil
-                    readerLaunchID = nil
-                    readerLaunchTask = nil
-                }
-            }
-            do {
-                guard let libraryRootURL = try resolveLibraryRootURL() else {
-                    throw NyaEHError.libraryFolderPermissionRequired
-                }
-                let session = try await Task.detached(priority: .userInitiated) {
-                    try ReaderArchiveSession(
-                        archiveURL: archiveURL,
-                        securityScopedRootURL: libraryRootURL
-                    )
-                }.value
-                guard !Task.isCancelled, readerLaunchID == launchID, launchingReaderBookID == expectedBookID else {
-                    return
-                }
-                let totalPages = await session.pageCount()
-                let resolvedPageID = min(max(initialPageID, 0), max(totalPages - 1, 0))
-                store.catalog.recordRead(for: book)
-                readerWindowPresenter.show(
-                    title: title,
-                    pages: seedPages,
-                    initialPageID: resolvedPageID,
-                    totalPages: totalPages,
-                    localizer: localizer,
-                    archiveSession: session,
-                    displayPreferences: readerDisplayPreferences,
-                    onDisplayPreferencesChange: onReaderDisplayPreferencesChange,
-                    savedWindowFrame: savedReaderWindowFrame,
-                    onWindowFrameChange: onReaderWindowFrameChange,
-                    onProgress: { pageIndex, totalPages, completed in
-                        store.catalog.saveReadingProgress(
-                            for: book,
-                            currentPageIndex: pageIndex,
-                            totalPages: totalPages,
-                            forceCompleted: completed
-                        )
-                    },
-                    onFlushProgress: {
-                        store.catalog.flushReadingProgress(for: book)
-                    }
-                )
-                store.catalog.loadError = nil
-            } catch {
-                guard !Task.isCancelled, readerLaunchID == launchID, launchingReaderBookID == expectedBookID else {
-                    return
-                }
-                store.catalog.loadError = error.localizedDescription
-            }
-        }
-    }
-
-    private func cancelReaderLaunchAndCloseWindow() {
-        readerLaunchTask?.cancel()
-        readerLaunchTask = nil
-        launchingReaderBookID = nil
-        readerLaunchID = nil
-        readerWindowPresenter.close()
+        readerLauncher.openReader(
+            for: book, title: title, initialPageID: initialPageID, seedPages: seedPages,
+            catalog: store.catalog, localizer: localizer, resolveLibraryRootURL: resolveLibraryRootURL,
+            readerDisplayPreferences: readerDisplayPreferences, onReaderDisplayPreferencesChange: onReaderDisplayPreferencesChange,
+            savedReaderWindowFrame: savedReaderWindowFrame, onReaderWindowFrameChange: onReaderWindowFrameChange
+        )
     }
 
     @ViewBuilder
@@ -850,7 +784,7 @@ private struct RelatedBooksRow: View {
     @State private var scrollState = RelatedBooksScrollState()
     @State private var isHoveringCarousel = false
 
-    private let metrics = BookCardMetrics(width: 128)
+    private let metrics = BookCardMetrics(width: 128, appearance: .standard)
 
     private var rowHeight: CGFloat {
         let labelHeight: CGFloat = displayMode == .versionLabels ? 20 + metrics.contentSpacing : 0
@@ -2438,7 +2372,7 @@ private struct RatingFavoritePanel: View {
                 }
                 .font(.title3.weight(.semibold))
                 .buttonStyle(.borderedProminent)
-                .tint(book.mark ? themeColor : .secondary)
+                .tint(book.mark ? .red : .secondary)
             }
             .frame(maxWidth: .infinity, alignment: .center)
         }
@@ -3726,9 +3660,9 @@ private struct BookDetailTagPill: View {
             Button {
                 onToggleFollowed()
             } label: {
-                Image(systemName: tag.isFollowed ? "star.fill" : "star")
+                Image(systemName: tag.isFollowed ? "heart.fill" : "heart")
                     .font(isCompact ? .caption2 : .caption)
-                    .foregroundStyle(tag.isFollowed ? .yellow : .secondary)
+                    .foregroundStyle(tag.isFollowed ? .red : .secondary)
                     .frame(width: starWidth, height: isCompact ? 14 : 16)
                     .opacity(showsStar ? 1 : 0)
                     .clipped()

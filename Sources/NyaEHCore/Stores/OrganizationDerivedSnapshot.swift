@@ -31,11 +31,12 @@ struct OrganizationDerivedSnapshot: Sendable {
     let collectionCandidates: [LibraryBook]
     let versionCandidates: [LibraryBook]
     let recommendedBooks: [LibraryBook]
-    let markedPreviewBooks: [LibraryBook]
+    let homeFavoritePreview: HomeFavoritePreview
     let favoriteManagementBooks: [LibraryBook]
     let continueReadingBooks: [LibraryBook]
     let recentlyViewedBooks: [LibraryBook]
     let recentlyAddedBooks: [LibraryBook]
+    let homeArrivalDays: [HomeArrivalDay]
     let searchedBooks: [LibraryBook]
     let displayItems: [LibraryDisplayItem]
     let filteredDisplayItems: [LibraryDisplayItem]
@@ -122,12 +123,14 @@ struct OrganizationDerivedSnapshot: Sendable {
             case .missing: book.status == .missing || !book.exist
             }
         }
+        let favorites = primaryBooks.filter(\.mark)
+        let byArrival = books.sorted(by: HomeArrivalDay.newer)
         return Self(
             collectionCandidates: primaryBooks.filter { $0.collectionID == nil }.sorted(by: candidateSort),
             versionCandidates: books.filter { $0.versionGroupID == nil }.sorted(by: candidateSort),
             recommendedBooks: Array(primaryBooks.sorted { recommendationScore($0) < recommendationScore($1) }.prefix(10)),
-            markedPreviewBooks: Array(primaryBooks.filter(\.mark).prefix(10)),
-            favoriteManagementBooks: primaryBooks.filter(\.mark).sorted(by: favoriteSort),
+            homeFavoritePreview: HomeFavoritePreview(favorites: favorites),
+            favoriteManagementBooks: favorites.sorted(by: favoriteSort),
             continueReadingBooks: Array(primaryBooks.filter { book in
                 guard let id = book.databaseID, let state = readingStates[id] else { return false }
                 return state.currentPageIndex > 0 && !state.isCompleted && !book.isUserHidden
@@ -141,11 +144,8 @@ struct OrganizationDerivedSnapshot: Sendable {
                 let right = rhs.lastReadAt ?? 0
                 return left == right ? lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending : left > right
             }.prefix(10)),
-            recentlyAddedBooks: Array(books.sorted { lhs, rhs in
-                return lhs.createdAt == rhs.createdAt
-                    ? lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
-                    : lhs.createdAt > rhs.createdAt
-            }.prefix(10)),
+            recentlyAddedBooks: Array(byArrival.prefix(10)),
+            homeArrivalDays: HomeArrivalDay.latest(from: byArrival),
             searchedBooks: searchedBooks,
             displayItems: displayItems,
             filteredDisplayItems: displayItems.filter { item in

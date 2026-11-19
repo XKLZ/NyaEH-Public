@@ -14,6 +14,7 @@ struct ContentView: View {
     let appModel: NyaEHAppModel
     @Bindable var preferences: AppPreferences
     let developmentConfiguration: NyaEHDevelopmentConfiguration?
+    @State private var cardActions: BookCardActions
     @State private var initialSidebarWidth: CGFloat
     // 主导航拆成“侧边栏 base + 详情 overlay path”。这样从作品/合集进入书籍时，
     // 返回动画可以保留中间页面，不会闪回侧边栏基础页。
@@ -31,6 +32,7 @@ struct ContentView: View {
         preferences: AppPreferences,
         developmentConfiguration: NyaEHDevelopmentConfiguration?
     ) {
+        _cardActions = State(initialValue: BookCardActions(store: appModel.catalog, preferences: preferences))
         self.appModel = appModel
         self.preferences = preferences
         self.developmentConfiguration = developmentConfiguration
@@ -99,6 +101,23 @@ struct ContentView: View {
         } actions: {
             mainWindowActions
         }
+        .environment(\.bookCardActions, cardActions)
+        .overlay(alignment: .bottom) {
+            if let message = cardActions.notice {
+                Text(message).padding(10).background(.regularMaterial, in: Capsule()).padding()
+            }
+        }
+        .task(id: cardActions.noticeID) {
+            guard cardActions.notice != nil else { return }
+            try? await Task.sleep(for: .seconds(4))
+            if !Task.isCancelled { cardActions.notice = nil }
+        }
+        .onChange(of: store.deletingBookIDs) { _, ids in
+            if let id = cardActions.readerBookID, ids.contains(id) { cardActions.closeReader() }
+        }
+        .onDisappear { cardActions.closeReader() }
+        .environment(\.bookCardCatalog, store)
+        .environment(\.bookCardFields, preferences.bookCardFields)
         .toolbar(removing: hasImmersiveDetailToolbar || showsTagCategoryToolbar ? .title : nil)
         .toolbarBackgroundVisibility(hasImmersiveDetailToolbar ? .hidden : .automatic, for: .windowToolbar)
         .focusedSceneValue(\.nyaehAppCommands, appCommandContext)
@@ -213,7 +232,7 @@ struct ContentView: View {
             .help(localizer.string(preferences.isAdvancedSearchHeaderPinned ? .advancedSearchUnpinHeader : .advancedSearchPinHeader))
 
             Toggle(isOn: Binding(
-                get: { preferences.isAdvancedSearchCollectionMembersExpanded },
+                get: { appModel.catalog.advancedSearchShowsIndividualBooks },
                 set: { showsIndividualBooks in
                     appModel.catalog.advancedSearchShowsIndividualBooks = showsIndividualBooks
                     preferences.isAdvancedSearchCollectionMembersExpanded = showsIndividualBooks
@@ -221,18 +240,18 @@ struct ContentView: View {
             )) {
                 Label(
                     localizer.string(
-                        preferences.isAdvancedSearchCollectionMembersExpanded
+                        appModel.catalog.advancedSearchShowsIndividualBooks
                             ? .advancedSearchHideCollectionMembers
                             : .advancedSearchShowCollectionMembers
                     ),
-                    systemImage: preferences.isAdvancedSearchCollectionMembersExpanded
+                    systemImage: appModel.catalog.advancedSearchShowsIndividualBooks
                         ? "rectangle.stack.fill"
                         : "rectangle.stack"
                 )
             }
             .toggleStyle(SearchToolbarToggleStyle())
             .help(localizer.string(
-                preferences.isAdvancedSearchCollectionMembersExpanded
+                appModel.catalog.advancedSearchShowsIndividualBooks
                     ? .advancedSearchHideCollectionMembers
                     : .advancedSearchShowCollectionMembers
             ))
@@ -463,6 +482,7 @@ private struct LibraryContentView: View {
     let localizer: AppLocalizer
     let developmentConfiguration: NyaEHDevelopmentConfiguration?
     let resolveLibraryRootURL: @MainActor () throws -> URL?
+    @State private var requestedGroupID: String?
     @State private var advancedSearchPage = 1
     @State private var transitionBackingRouteIDs: Set<LibraryRoute.ID> = []
     @State private var transitionBackingClearTask: Task<Void, Never>?
@@ -495,6 +515,8 @@ private struct LibraryContentView: View {
             )
             .padding()
         }
+        .environment(\.navigateCardGroup, CardGroupNavigation(open: navigateCardGroup))
+        .editionDeckHost(page: [baseDestination.id] + detailPath.map(\.id))
         .navigationTitle((try? TestRuntime.current.get()).map { $0.name + " · " + currentNavigationTitle } ?? currentNavigationTitle)
         .onChange(of: detailPath) { oldPath, newPath in
             retainTransitionBackingRoutes(from: oldPath, to: newPath)
@@ -563,6 +585,7 @@ private struct LibraryContentView: View {
         case .home:
             LibraryHomeView(
                 store: appModel.home,
+                pageIsActive: detailPath.isEmpty,
                 isTagTranslationEnabled: isTagTranslationEnabled,
                 titleDisplayMode: titleDisplayMode,
                 cardWidth: $homeCardWidth,
@@ -570,30 +593,17 @@ private struct LibraryContentView: View {
                 localizer: localizer,
                 onSelect: { book in openBook(book, source: .home) },
                 onOpenFavorites: {
-                    store.advancedSearchScope = .marked
-                    store.advancedSearchPage = 1
-                    store.submitAdvancedSearch(isTagTranslationEnabled: isTagTranslationEnabled)
                     withAnimation(.snappy(duration: 0.28)) {
-                        baseDestination = .search
+                        baseDestination = .favoriteManagement
                         updateDetailPath(LibraryNavigationPathReducer.pathAfterSelectingBaseDestination())
                     }
                 },
-                onOpenSearchScope: { scope in
-                    store.advancedSearchScope = scope
-                    store.advancedSearchPage = 1
-                    store.submitAdvancedSearch(isTagTranslationEnabled: isTagTranslationEnabled)
-                    withAnimation(.snappy(duration: 0.28)) {
-                        baseDestination = .search
-                        updateDetailPath(LibraryNavigationPathReducer.pathAfterSelectingBaseDestination())
-                    }
-                },
-                onOpenCollections: {
-                    withAnimation(.snappy(duration: 0.28)) {
-                        baseDestination = .collectionManagement
-                        updateDetailPath(LibraryNavigationPathReducer.pathAfterSelectingBaseDestination())
-                    }
-                },
-                onSelectInsightTag: openHomeInsightTag
+                onOpenRecentSearch: openRecentSearch,
+                onSelectInsightTag: openHomeInsightTag,
+                onImport: {
+                    baseDestination = .importLibrary
+                    updateDetailPath(LibraryNavigationPathReducer.pathAfterSelectingBaseDestination())
+                }
             )
         case .search:
             AdvancedSearchView(
@@ -606,7 +616,7 @@ private struct LibraryContentView: View {
                 pageSize: $advancedSearchPageSize,
                 isFacetPanelExpanded: $isAdvancedSearchFacetPanelExpanded,
                 isHeaderPinned: $isAdvancedSearchHeaderPinned,
-                isCollectionMembersExpanded: preferences.isAdvancedSearchCollectionMembersExpanded,
+                isCollectionMembersExpanded: store.advancedSearchShowsIndividualBooks,
                 cardWidth: $advancedSearchCardWidth,
                 focusRequest: advancedSearchFocusRequest,
                 isActive: detailPath.isEmpty,
@@ -647,6 +657,7 @@ private struct LibraryContentView: View {
             )
         case .collectionManagement:
             CollectionManagementView(
+                requestedGroupID: $requestedGroupID,
                 store: appModel.organization,
                 titleDisplayMode: titleDisplayMode,
                 isTagTranslationEnabled: isTagTranslationEnabled,
@@ -666,6 +677,7 @@ private struct LibraryContentView: View {
             )
         case .versionManagement:
             VersionManagementView(
+                requestedGroupID: $requestedGroupID,
                 store: appModel.organization,
                 titleDisplayMode: titleDisplayMode,
                 isTagTranslationEnabled: isTagTranslationEnabled,
@@ -706,6 +718,9 @@ private struct LibraryContentView: View {
         case .developmentTools:
             if let developmentConfiguration {
                 DevelopmentToolsView(
+                    catalog: store, titleDisplayMode: titleDisplayMode, initialCardWidth: homeCardWidth,
+                    resolveLibraryRootURL: resolveLibraryRootURL,
+                    onOpenRecentSearch: openRecentSearch,
                     configuration: developmentConfiguration,
                     localizer: localizer,
                     readerDisplayPreferences: preferences.readerDisplayPreferences,
@@ -1061,6 +1076,16 @@ private struct LibraryContentView: View {
         openSearch(for: tag)
     }
 
+    private func openRecentSearch() {
+        advancedSearchPage = 1
+        store.advancedSearchPageSize = advancedSearchPageSize
+        store.searchRecentlyAddedBooks(isTagTranslationEnabled: isTagTranslationEnabled)
+        withAnimation(.snappy(duration: 0.28)) {
+            baseDestination = .search
+            updateDetailPath(LibraryNavigationPathReducer.pathAfterSelectingBaseDestination())
+        }
+    }
+
     private func openSearch(for tag: TagDisplaySummary) {
         store.searchBooks(
             matching: tag,
@@ -1116,6 +1141,29 @@ private struct LibraryContentView: View {
                     currentPath: detailPath
                 ))
             }
+        }
+    }
+
+    private func navigateCardGroup(_ destination: CardGroupDestination) {
+        switch destination {
+        case .series(let id):
+            guard store.collection(id: id) != nil else { return }
+            let route = LibraryRoute.collectionDetail(id)
+            if let existing = detailPath.firstIndex(of: route) {
+                updateDetailPath(Array(detailPath.prefix(through: existing)))
+            } else {
+                updateDetailPath(detailPath + [route])
+            }
+        case .manageSeries(let id):
+            guard store.collection(id: id) != nil else { return }
+            requestedGroupID = id
+            baseDestination = .collectionManagement
+            updateDetailPath([])
+        case .manageVersions(let id):
+            guard store.versionGroup(id: id) != nil else { return }
+            requestedGroupID = id
+            baseDestination = .versionManagement
+            updateDetailPath([])
         }
     }
 

@@ -20,7 +20,7 @@ struct CollectionDetailView: View {
                         ScrollView {
                             LazyVGrid(
                                 columns: [
-                                    GridItem(.adaptive(minimum: 142, maximum: 160), spacing: 22, alignment: .top)
+                                    GridItem(.adaptive(minimum: BookCardMetrics.default.gridMinimumWidth, maximum: BookCardMetrics.default.gridMaximumWidth), spacing: 22, alignment: .top)
                                 ],
                                 alignment: .leading,
                                 spacing: 24
@@ -30,9 +30,7 @@ struct CollectionDetailView: View {
                                         book: book,
                                         titleDisplayMode: titleDisplayMode,
                                         localizer: localizer,
-                                        action: {
-                                            onSelect(book)
-                                        }
+                                        action: onSelect
                                     )
                                 }
                             }

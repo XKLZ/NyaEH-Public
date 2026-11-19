@@ -137,6 +137,8 @@ struct AdvancedSearchView: View {
 
     var body: some View {
         searchLifecycleView
+            .environment(\.bookCardAggregatesVersions, !isCollectionMembersExpanded)
+            .environment(\.bookCardsShowUserHidden, !store.catalog.isCoverImageSearchActive && store.catalog.advancedSearchScope == .hidden)
             .confirmSeriesConflict($seriesConflictConfirmation, localizer: localizer)
             .overlay(alignment: .topTrailing) {
                 OrganizationSaveStatusView(store: store.catalog, localizer: localizer)
@@ -548,7 +550,7 @@ struct AdvancedSearchView: View {
                 let shouldUnmark = selectedBooks.allSatisfy { $0.mark }
                 Label(
                     localizer.string(shouldUnmark ? .batchUnmark : .batchMark),
-                    systemImage: shouldUnmark ? "star.slash" : "star.fill"
+                    systemImage: shouldUnmark ? "heart.slash" : "heart.fill"
                 )
             }
 
@@ -722,17 +724,15 @@ struct AdvancedSearchView: View {
         book: LibraryBook,
         position: SearchCollectionBrowsePosition
     ) {
+        let memberID = position.focusedMemberID ?? book.id
         guard store.catalog.advancedSearchResultLayout == .card,
               let collectionID = collectionPopoverState.presentation?.collectionID,
-              let currentBook = pageItems.first(where: { $0.id == "collection.\(collectionID)" })?
-                .books.first(where: { $0.id == book.id }),
-              collectionPopoverState.activateMember(
-                presentationID: presentationID,
-                bookID: currentBook.id,
-                position: position
-              ) else { return }
-        // 直接进入详情，保留系列浮窗的一次性返回记录。
-        onSelect(.book(currentBook))
+              let member = pageItems.first(where: { $0.id == "collection.\(collectionID)" })?
+                .books.first(where: { $0.id == memberID }) else { return }
+        guard member.id == book.id, let target = store.catalog.book(id: book.id),
+              collectionPopoverState.activateMember(presentationID: presentationID, bookID: memberID, position: position)
+        else { return }
+        onSelect(.book(target))
     }
 
     private func toggleCollectionExpansion(_ id: BookCollection.ID) {
@@ -1886,22 +1886,12 @@ private struct SearchResultsView<TopContent: View>: View {
                 ForEach(snapshot.entries) { entry in
                     let item = entry.source.item
                     collectionAnchor(for: entry.source, viewport: viewport) {
-                        Button {
-                            onPrimaryActivate(item)
-                        } label: {
-                            SearchResultCardStaticContent(
-                                item: item,
-                                titleDisplayMode: titleDisplayMode,
-                                language: localizer.language,
-                                metrics: cardMetrics
-                            )
-                            .equatable()
-                        }
-                        .buttonStyle(.plain)
-                        .searchBatchSelection(isSelected: isSelected(item), localizer: localizer) {
-                            onToggleSelection(item)
-                        }
-                        .bookCardHoverSurface()
+                        LibraryDisplayItemCardButton(
+                            item: item, titleDisplayMode: titleDisplayMode, localizer: localizer,
+                            metrics: cardMetrics, showsUnobstructedCover: true,
+                            selection: BookCardSelection(isSelected: isSelected(item), toggle: { onToggleSelection(item) }),
+                            action: onPrimaryActivate
+                        )
                     }
                     .id(entry.id)
                     .onAppear {
@@ -2151,23 +2141,6 @@ private struct SearchResultsView<TopContent: View>: View {
         }
     }
 
-}
-
-private struct SearchResultCardStaticContent: View, Equatable {
-    let item: LibraryDisplayItem
-    let titleDisplayMode: BookTitleDisplayMode
-    let language: AppLanguage
-    let metrics: BookCardMetrics
-
-    var body: some View {
-        LibraryDisplayItemCardView(
-            item: item,
-            titleDisplayMode: titleDisplayMode,
-            localizer: AppLocalizer(language: language),
-            metrics: metrics,
-            showsUnobstructedCover: true
-        )
-    }
 }
 
 enum AdvancedSearchInteractionPolicy {

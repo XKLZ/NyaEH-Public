@@ -5,7 +5,7 @@ import Observation
 
 @MainActor
 @Observable
-final class CatalogStore {
+final class CatalogStore: BookCardLibrary {
     // MARK: - 视图可观察状态
 
     // 这些集合是界面直接消费的快照。所有会改变数据库或文件系统的动作仍要走 service，
@@ -143,11 +143,13 @@ final class CatalogStore {
     private(set) var searchedBooks: [LibraryBook] = []
     private(set) var displayItems: [LibraryDisplayItem] = []
     private(set) var recommendedBooks: [LibraryBook] = []
-    private(set) var markedPreviewBooks: [LibraryBook] = []
+    private(set) var homeFavoritePreview = HomeFavoritePreview(favorites: [])
+    var markedPreviewBooks: [LibraryBook] { Array(homeFavoritePreview.books) }
     private(set) var favoriteManagementBooks: [LibraryBook] = []
     private(set) var continueReadingBooks: [LibraryBook] = []
     private(set) var recentlyViewedBooks: [LibraryBook] = []
     private(set) var recentlyAddedBooks: [LibraryBook] = []
+    private(set) var homeArrivalDays: [HomeArrivalDay] = []
     private(set) var filteredDisplayItems: [LibraryDisplayItem] = []
     private(set) var filteredBooks: [LibraryBook] = []
 
@@ -159,7 +161,7 @@ final class CatalogStore {
     @ObservationIgnored private var organizationTail: Task<Void, Never>?
     @ObservationIgnored private var organizationQueueRevision = 0
     @ObservationIgnored private var organizationPendingCounts: [String: Int] = [:]
-    @ObservationIgnored private var pendingOrganizationMutations: [(UUID, OrganizationMutation)] = []
+    @ObservationIgnored private var pendingOrganizationMutations: [(UUID, OrganizationMutation, optimistic: Bool)] = []
     @ObservationIgnored private var pendingCollectionOrders: [BookCollection.DatabaseID: [LibraryBook]] = [:]
     @ObservationIgnored private var organizationProjectionTask: Task<Void, Never>?
     @ObservationIgnored private var organizationProjectionRevision = 0
@@ -366,6 +368,20 @@ final class CatalogStore {
                 }
                 return companion.id != book.id
             }
+    }
+
+    func bookForCard(_ book: LibraryBook) -> LibraryBook {
+        // Targeted mutations refresh the identity index before this observation is delivered.
+        _ = books
+        return bookIndex[book.id] ?? book
+    }
+
+    func cardVersionAlternatives(to book: LibraryBook, showsUserHidden: Bool) -> [LibraryBook] {
+        guard book.versionGroupID != nil else { return [] }
+        _ = derivedDataRevision
+        _ = books
+        let companions = versionCompanions(for: book).compactMap { bookIndex[$0.id] }
+        return BookCardVersionChoices.alternatives(to: book, among: companions, showsUserHidden: showsUserHidden)
     }
 
     func versionCompanions(for book: LibraryBook) -> [LibraryBook] {
@@ -983,6 +999,21 @@ final class CatalogStore {
         }
     }
 
+    func searchRecentlyAddedBooks(isTagTranslationEnabled: Bool) {
+        advancedSearchText = ""
+        advancedSearchMode = .exact
+        advancedSearchScope = .all
+        advancedSearchPage = 1
+        advancedSearchSortKey = .added
+        advancedSearchSortDirection = .descending
+        advancedSearchShowsIndividualBooks = true
+        isAdvancedSearchRegexEnabled = false
+        advancedSearchActiveTokenRange = nil
+        updateAdvancedSearchDraft()
+        refreshAdvancedSearchSuggestionsAsync(isTagTranslationEnabled: isTagTranslationEnabled)
+        submitAdvancedSearch(isTagTranslationEnabled: isTagTranslationEnabled)
+    }
+
     func searchBooks(
         matching tag: TagDisplaySummary,
         isTagTranslationEnabled: Bool
@@ -1535,7 +1566,7 @@ final class CatalogStore {
                 books = try service.loadBooks()
             }
             rebuildDerivedCaches()
-            for (_, mutation) in pendingOrganizationMutations { applyOptimisticOrganizationMutation(mutation) }
+            for (_, mutation, optimistic) in pendingOrganizationMutations where optimistic { applyOptimisticOrganizationMutation(mutation) }
             for (collectionID, orderedBooks) in pendingCollectionOrders {
                 let currentBooks = orderedBooks.compactMap { bookIndex[$0.id] }
                 applyOptimisticCollectionOrder(currentBooks, collectionID: collectionID, shouldCommit: false)
@@ -1970,6 +2001,34 @@ final class CatalogStore {
         }
     }
 
+    func setCardCompleted(_ completed: Bool, book: LibraryBook) {
+        if completed {
+            let state = readingState(for: book)
+            let pages = BookCardMetadata(book: book).pages ?? 0
+            saveReadingProgress(for: book, currentPageIndex: state?.currentPageIndex ?? 0,
+                                totalPages: state.flatMap { $0.totalPages > 0 ? $0.totalPages : nil } ?? pages,
+                                forceCompleted: true)
+        } else {
+            resetReadingProgress(for: book)
+        }
+    }
+
+    func setCardMarked(_ isMarked: Bool, book: LibraryBook) {
+        let current = bookIndex[book.id] ?? book
+        do {
+            let saved = try service.setMarked(isMarked, for: current)
+            let companions = versionCompanions(for: saved).compactMap { bookIndex[$0.id] }
+            let updates = companions.map { companion in
+                var book = companion
+                book.mark = saved.mark
+                return book
+            }
+            applyBookUpdatesIncrementally([saved] + updates)
+        } catch {
+            loadError = error.localizedDescription
+        }
+    }
+
     func setMarked(_ isMarked: Bool, for books: [LibraryBook]) {
         var failures: [String] = []
         var updates: [LibraryBook] = []
@@ -2193,8 +2252,8 @@ final class CatalogStore {
         enqueueOrganizationMutation(.deleteVersionGroup(group))
     }
 
-    func setPrimaryVersion(_ book: LibraryBook) {
-        enqueueOrganizationMutation(.setPrimaryVersion(book))
+    func setPrimaryVersion(_ book: LibraryBook, completion: ((String?) -> Void)? = nil) {
+        enqueueOrganizationMutation(.setPrimaryVersion(book), completion: completion)
     }
 
     func setVersionLabel(_ label: String, for book: LibraryBook) {
@@ -2944,9 +3003,13 @@ final class CatalogStore {
 
     private func enqueueOrganizationMutation(
         _ mutation: OrganizationMutation,
-        useSemanticSimilarity: Bool = false
+        useSemanticSimilarity: Bool = false,
+        completion: ((String?) -> Void)? = nil
     ) {
-        guard !isDeletingBook else { return }
+        guard !isDeletingBook else {
+            completion?(NyaEHError.groupingRepositoryUnavailable.localizedDescription)
+            return
+        }
         switch mutation {
         case .createVersionGroup, .addToVersionGroup, .removeFromVersionGroup, .deleteVersionGroup,
              .setPrimaryVersion, .acceptCreateVersionGroup, .acceptAddToVersionGroup:
@@ -2959,8 +3022,8 @@ final class CatalogStore {
         for key in keys { organizationPendingCounts[key, default: 0] += 1 }
         savingOrganizationKeys = Set(organizationPendingCounts.keys)
         isSavingOrganization = true
-        pendingOrganizationMutations.append((token, mutation))
-        applyOptimisticOrganizationMutation(mutation)
+        pendingOrganizationMutations.append((token, mutation, optimistic: completion == nil))
+        if completion == nil { applyOptimisticOrganizationMutation(mutation) }
 
         let previous = organizationTail
         organizationQueueRevision &+= 1
@@ -3008,6 +3071,7 @@ final class CatalogStore {
                 loadError = errorMessage
                 organizationSaveError = errorMessage
             }
+            completion?(organizationSaveError)
             for key in keys {
                 let remaining = (organizationPendingCounts[key] ?? 1) - 1
                 if remaining > 0 { organizationPendingCounts[key] = remaining }
@@ -3065,7 +3129,7 @@ final class CatalogStore {
         if let createdVersionGroupID = result.createdVersionGroupID { selectedVersionGroupID = String(createdVersionGroupID) }
         if selectedCollectionID.flatMap(collection(id:)) == nil { selectedCollectionID = nil }
         if selectedVersionGroupID.flatMap(versionGroup(id:)) == nil { selectedVersionGroupID = versionGroups.first?.id }
-        for (_, mutation) in pendingOrganizationMutations { applyOptimisticOrganizationMutation(mutation) }
+        for (_, mutation, optimistic) in pendingOrganizationMutations where optimistic { applyOptimisticOrganizationMutation(mutation) }
         reloadAddToSelectedCollectionRecommendationsAsync()
         reloadAddToSelectedVersionGroupRecommendationsAsync()
         if !result.books.isEmpty { changeBus.publish(.booksUpserted(result.books)) }
@@ -3232,11 +3296,12 @@ final class CatalogStore {
             collectionCandidateBaseBooks = derived.collectionCandidates
             versionCandidateBaseBooks = derived.versionCandidates
             recommendedBooks = derived.recommendedBooks
-            markedPreviewBooks = derived.markedPreviewBooks
+            homeFavoritePreview = derived.homeFavoritePreview
             favoriteManagementBooks = derived.favoriteManagementBooks
             continueReadingBooks = derived.continueReadingBooks
             recentlyViewedBooks = derived.recentlyViewedBooks
             recentlyAddedBooks = derived.recentlyAddedBooks
+            homeArrivalDays = derived.homeArrivalDays
             searchedBooks = derived.searchedBooks
             displayItems = derived.displayItems
             filteredDisplayItems = derived.filteredDisplayItems
@@ -4668,6 +4733,10 @@ final class CatalogStore {
         guard !updatedBooks.isEmpty else { return }
         let updatedByID = Dictionary(uniqueKeysWithValues: updatedBooks.map { ($0.id, $0) })
 
+        let arrivalOrderChanged = updatedBooks.contains { book in
+            guard let old = bookIndex[book.id] else { return true }
+            return old.createdAt != book.createdAt || old.title != book.title || old.isUserHidden != book.isUserHidden
+        }
         for index in books.indices {
             if let updated = updatedByID[books[index].id] {
                 books[index] = updated
@@ -4715,19 +4784,16 @@ final class CatalogStore {
                !recentlyViewedBooks.contains(where: { $0.id == updated.id }) {
                 recentlyViewedBooks.append(updated)
             }
-            markedPreviewBooks.removeAll { $0.id == updated.id }
             favoriteManagementBooks.removeAll { $0.id == updated.id }
             if updated.mark && !updated.isUserHidden && isPrimaryDisplayVersion(updated) {
-                markedPreviewBooks.append(updated)
                 favoriteManagementBooks.append(updated)
             }
         }
-        markedPreviewBooks = Array(markedPreviewBooks.prefix(10))
+        homeFavoritePreview = HomeFavoritePreview(favorites: favoriteManagementBooks)
         favoriteManagementBooks.sort(by: favoriteManagementSort)
         recentlyViewedBooks.sort(by: recentlyViewedSort)
         recentlyViewedBooks = Array(recentlyViewedBooks.prefix(10))
-        recentlyAddedBooks.sort(by: recentlyAddedSort)
-        recentlyAddedBooks = Array(recentlyAddedBooks.prefix(10))
+        if arrivalOrderChanged { rebuildArrivalShelves() }
         changeBus.publish(.booksUpserted(updatedBooks))
         loadError = nil
     }
@@ -4882,14 +4948,10 @@ final class CatalogStore {
                 .sorted { recommendationScore(for: $0) < recommendationScore(for: $1) }
                 .prefix(10)
         )
-        markedPreviewBooks = Array(
-            primaryDisplayBooks
-                .filter(\.mark)
-                .prefix(10)
-        )
         favoriteManagementBooks = primaryDisplayBooks
             .filter(\.mark)
             .sorted(by: favoriteManagementSort)
+        homeFavoritePreview = HomeFavoritePreview(favorites: favoriteManagementBooks)
         continueReadingBooks = primaryDisplayBooks
             .filter { book in
                 guard let bookID = book.databaseID, let state = readingStates[bookID] else { return false }
@@ -4908,11 +4970,13 @@ final class CatalogStore {
                 .sorted(by: recentlyViewedSort)
                 .prefix(10)
         )
-        recentlyAddedBooks = Array(
-            books
-                .sorted(by: recentlyAddedSort)
-                .prefix(10)
-        )
+        rebuildArrivalShelves()
+    }
+
+    private func rebuildArrivalShelves() {
+        let byArrival = books.sorted(by: HomeArrivalDay.newer)
+        recentlyAddedBooks = Array(byArrival.prefix(10))
+        homeArrivalDays = HomeArrivalDay.latest(from: byArrival)
     }
 
     private func matchesSearch(_ book: LibraryBook) -> Bool {
@@ -5155,13 +5219,6 @@ final class CatalogStore {
             return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
         return lhs.date > rhs.date
-    }
-
-    private func recentlyAddedSort(_ lhs: LibraryBook, _ rhs: LibraryBook) -> Bool {
-        if lhs.createdAt == rhs.createdAt {
-            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
-        }
-        return lhs.createdAt > rhs.createdAt
     }
 
     private func recentlyViewedSort(_ lhs: LibraryBook, _ rhs: LibraryBook) -> Bool {

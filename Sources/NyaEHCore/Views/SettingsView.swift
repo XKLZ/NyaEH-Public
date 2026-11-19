@@ -185,6 +185,16 @@ private struct GeneralSettingsPane: View {
                 }
             }
 
+            Section(localizer.string(.cardDisplay)) {
+                cardFieldGroup(.cardMetadata, fields: [
+                    (.language, .cardLanguage), (.color, .fullColor), (.censorship, .statusCensorshipShort), (.pages, .pages)
+                ])
+                cardFieldGroup(.cardEvaluation, fields: [(.rating, .rating), (.directRead, .cardDirectRead)])
+                cardFieldGroup(.cardReading, fields: [(.readingStatus, .cardReading), (.readingNumbers, .cardReadingNumbers)])
+                Button(localizer.string(.cardRestoreDefaults)) { preferences.bookCardFields = .all }
+                    .disabled(preferences.bookCardFields == .all)
+            }
+
             if let updateManager {
                 Section(localizer.string(.softwareUpdates)) {
                     Button(localizer.string(.checkForUpdates)) {
@@ -232,6 +242,32 @@ private struct GeneralSettingsPane: View {
         } message: {
             Text(languageChangeError ?? "")
         }
+    }
+
+    private func cardFieldGroup(_ title: L10nKey, fields: [(BookCardFields, L10nKey)]) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(localizer.string(title))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(fields, id: \.0.rawValue) { field, label in
+                    Toggle(localizer.string(label), isOn: Binding(
+                        get: { preferences.bookCardFields.contains(field) },
+                        set: { enabled in
+                            if enabled {
+                                preferences.bookCardFields.insert(field)
+                            } else {
+                                preferences.bookCardFields.remove(field)
+                            }
+                        }
+                    ))
+                    .toggleStyle(.checkbox)
+                }
+            }
+            .frame(width: 180, alignment: .leading)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(localizer.string(title))
     }
 
     private func restartForLanguageChange() {
@@ -728,7 +764,7 @@ private struct LibrarySettingsPane: View {
                 Button {
                     store.catalog.repairVersionGroupMarkedState(localizer: localizer)
                 } label: {
-                    Label(localizer.string(.versionGroupMarkedRepair), systemImage: "star.leadinghalf.filled")
+                    Label(localizer.string(.versionGroupMarkedRepair), systemImage: "heart.fill")
                 }
                 .disabled(store.catalog.isRepairingVersionGroupMarkedState)
 

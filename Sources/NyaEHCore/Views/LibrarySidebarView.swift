@@ -25,7 +25,7 @@ struct LibrarySidebarView: View {
 
                 disclosureRow(.libraryManagement, systemImage: "slider.horizontal.3", isExpanded: $isManagementExpanded)
                 if isManagementExpanded {
-                    destinationRow(.favoriteManagement, title: .favorites, systemImage: "star.square", isChild: true)
+                    destinationRow(.favoriteManagement, title: .favorites, systemImage: "heart.square", isChild: true)
                     destinationRow(.collectionManagement, title: .series, systemImage: "rectangle.stack.badge.plus", isChild: true)
                     destinationRow(.versionManagement, title: .versions, systemImage: "square.2.layers.3d", isChild: true)
                 }

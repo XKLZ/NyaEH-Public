@@ -39,7 +39,7 @@ enum BookSearchScope: String, CaseIterable, Identifiable, Codable, Hashable, Sen
     var systemImage: String {
         switch self {
         case .all: "books.vertical"
-        case .marked: "star.fill"
+        case .marked: "heart.fill"
         case .continueReading: "book.pages"
         case .unread: "circle"
         case .completed: "checkmark.circle.fill"
@@ -109,7 +109,7 @@ enum SearchResultSortKey: String, CaseIterable, Identifiable, Codable, Sendable 
         case .title: "textformat"
         case .rating: "star"
         case .pages: "doc.on.doc"
-        case .marked: "star.fill"
+        case .marked: "heart.fill"
         }
     }
 }

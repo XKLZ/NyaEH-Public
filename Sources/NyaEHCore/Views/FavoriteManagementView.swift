@@ -26,7 +26,7 @@ struct FavoriteManagementView: View {
             if books.isEmpty {
                 ContentUnavailableView(
                     localizer.string(.noBooks),
-                    systemImage: "star",
+                    systemImage: "heart",
                     description: Text(localizer.string(.importedBooksDescription))
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -72,7 +72,7 @@ private struct FavoriteManagementToolbar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Label(localizer.string(.favoriteManagement), systemImage: "star.fill")
+            Label(localizer.string(.favoriteManagement), systemImage: "heart.fill")
                 .font(.headline)
 
             Text(localizer.collectionBookCount(count))
@@ -113,7 +113,7 @@ private struct FavoriteManagementResults: View {
             case .card:
                 LazyVGrid(
                     columns: [
-                        GridItem(.adaptive(minimum: 154, maximum: 174), spacing: 22, alignment: .top)
+                        GridItem(.adaptive(minimum: BookCardMetrics.default.cardWidth + 26, maximum: BookCardMetrics.default.cardWidth + 46), spacing: 22, alignment: .top)
                     ],
                     alignment: .leading,
                     spacing: 24
@@ -159,17 +159,7 @@ private struct FavoriteBookCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Button {
-                onSelect(book)
-            } label: {
-                BookCardView(
-                    book: book,
-                    titleDisplayMode: titleDisplayMode,
-                    localizer: localizer
-                )
-            }
-            .buttonStyle(.plain)
-            .bookCardHoverSurface()
+            BookCardButton(book: book, titleDisplayMode: titleDisplayMode, localizer: localizer, action: onSelect)
 
             HStack(spacing: 8) {
                 Button {
@@ -181,13 +171,13 @@ private struct FavoriteBookCard: View {
                 Button(role: .destructive) {
                     onRemove(book)
                 } label: {
-                    Label(localizer.string(.remove), systemImage: "star.slash")
+                    Label(localizer.string(.remove), systemImage: "heart.slash")
                 }
             }
             .labelStyle(.iconOnly)
             .buttonStyle(.bordered)
             .controlSize(.small)
-            .frame(width: 128, alignment: .leading)
+            .frame(width: BookCardMetrics.default.cardWidth, alignment: .leading)
         }
         .padding(12)
         .favoriteGlassPanel(cornerRadius: 16, material: .thinMaterial, interactive: true)
@@ -258,7 +248,7 @@ private struct FavoriteBookRow: View {
             Button(role: .destructive) {
                 onRemove(book)
             } label: {
-                Label(localizer.string(.remove), systemImage: "star.slash")
+                Label(localizer.string(.remove), systemImage: "heart.slash")
             }
             .help(localizer.string(.remove))
         }
