@@ -107,8 +107,16 @@ struct WorkDetailTransitionShell: View {
                     heroShell
 
                     LazyVStack(alignment: .leading, spacing: 14) {
-                        ForEach(0..<skeletonCount, id: \.self) { index in
-                            WorkDetailTransitionSectionSkeleton(usesDoubleRow: index == 0)
+                        if let detail {
+                            ForEach(detail.sections.prefix(WorkDetailSectionRenderBudget.initialUnlockedCount)) { section in
+                                WorkCharacterShelfPlaceholder(
+                                    usesDoubleRow: WorkCharacterShelfLayout.usesDoubleRow(bookCount: section.bookCount)
+                                )
+                            }
+                        } else {
+                            ForEach(0..<WorkDetailSectionRenderBudget.initialUnlockedCount, id: \.self) { index in
+                                WorkCharacterShelfPlaceholder(usesDoubleRow: index == 0)
+                            }
                         }
                     }
                     .padding(.horizontal, 34)
@@ -170,10 +178,6 @@ struct WorkDetailTransitionShell: View {
             localizer.workDetailCharacterCount(detail.characterCount),
             localizer.workDetailBookCount(detail.totalBookCount)
         ]
-    }
-
-    private var skeletonCount: Int {
-        min(max(detail?.sections.count ?? WorkDetailSectionRenderBudget.initialUnlockedCount, 1), 3)
     }
 }
 
@@ -391,64 +395,6 @@ private struct BookDetailTransitionSectionSkeleton: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(.white.opacity(0.12), lineWidth: 1)
         }
-    }
-}
-
-private struct WorkDetailTransitionSectionSkeleton: View {
-    let usesDoubleRow: Bool
-
-    var body: some View {
-        HStack(alignment: .bottom, spacing: -18) {
-            VStack(alignment: .leading, spacing: 10) {
-                RoundedRectangle(cornerRadius: 28)
-                    .fill(.secondary.opacity(0.14))
-                    .frame(width: 260, height: usesDoubleRow ? 430 : 370)
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(.secondary.opacity(0.20))
-                    .frame(width: 210, height: 36)
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(.secondary.opacity(0.16))
-                    .frame(width: 96, height: 22)
-            }
-            .frame(width: 340, height: usesDoubleRow ? 560 : 500, alignment: .bottomLeading)
-
-            HStack(alignment: .top, spacing: usesDoubleRow ? 16 : 20) {
-                ForEach(0..<5, id: \.self) { _ in
-                    VStack(spacing: usesDoubleRow ? 12 : 0) {
-                        cardPlaceholder
-                        if usesDoubleRow {
-                            cardPlaceholder
-                        }
-                    }
-                }
-            }
-            .padding(.vertical, 10)
-            .padding(.leading, 28)
-            .padding(.trailing, 18)
-        }
-        .frame(minHeight: usesDoubleRow ? 590 : 520, alignment: .bottomLeading)
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .stroke(.white.opacity(0.14), lineWidth: 1)
-        }
-    }
-
-    private var cardPlaceholder: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(.secondary.opacity(0.16))
-                .frame(width: usesDoubleRow ? 120 : 152, height: usesDoubleRow ? 170 : 216)
-            RoundedRectangle(cornerRadius: 6)
-                .fill(.secondary.opacity(0.18))
-                .frame(width: usesDoubleRow ? 104 : 132, height: 18)
-            RoundedRectangle(cornerRadius: 5)
-                .fill(.secondary.opacity(0.12))
-                .frame(width: usesDoubleRow ? 86 : 112, height: 14)
-        }
-        .frame(width: usesDoubleRow ? 120 : 152, height: usesDoubleRow ? 224 : 286, alignment: .topLeading)
     }
 }
 

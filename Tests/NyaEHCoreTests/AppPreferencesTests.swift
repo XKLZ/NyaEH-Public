@@ -957,6 +957,18 @@ struct AppPreferencesTests {
         #expect(height >= expectedMinimum)
     }
 
+    @Test("work shelf background contains the carousel and preserves the portrait minimum",
+          arguments: [6, 7], [BookCardFields.all, .metadata, []])
+    func workShelfFitsDisplayedCardFields(bookCount: Int, fields: BookCardFields) {
+        let doubleRow = WorkCharacterShelfLayout.usesDoubleRow(bookCount: bookCount)
+        let metrics = WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: doubleRow)
+        let carouselHeight = WorkCharacterShelfMetrics.carouselHeight(metrics: metrics, usesDoubleRow: doubleRow, fields: fields)
+        let shelfHeight = WorkCharacterShelfMetrics.shelfHeight(usesDoubleRow: doubleRow, carouselHeight: carouselHeight)
+
+        #expect(shelfHeight >= carouselHeight)
+        #expect(shelfHeight == (bookCount == 6 ? 520 : (fields == .all ? 620 : 590)))
+    }
+
     @Test("work detail render phase shows loading shell before uncached content")
     func workDetailRenderPhaseShowsLoadingShellBeforeUncachedContent() {
         #expect(WorkDetailRenderPhase.resolve(hasDetail: false, isLoading: false, hasRequestedLoad: false, hasError: false) == .loadingShell)
@@ -991,8 +1003,8 @@ struct AppPreferencesTests {
 
     @Test("work character shelf layout handles single and double row ranges")
     func workCharacterShelfLayoutHandlesSingleAndDoubleRowRanges() {
-        #expect(!WorkCharacterShelfLayout.usesDoubleRow(bookCount: 6, threshold: 6))
-        #expect(WorkCharacterShelfLayout.usesDoubleRow(bookCount: 7, threshold: 6))
+        #expect(!WorkCharacterShelfLayout.usesDoubleRow(bookCount: 6))
+        #expect(WorkCharacterShelfLayout.usesDoubleRow(bookCount: 7))
         #expect(WorkCharacterShelfLayout.columnCount(bookCount: 0, usesDoubleRow: false) == 0)
         #expect(WorkCharacterShelfLayout.columnCount(bookCount: 5, usesDoubleRow: false) == 5)
         #expect(WorkCharacterShelfLayout.columnCount(bookCount: 7, usesDoubleRow: true) == 4)

@@ -168,11 +168,8 @@ struct WorkDetailView: View {
                                         }
                                         .transition(.opacity.combined(with: .scale(scale: 0.985)))
                                     } else {
-                                        WorkDetailLazySectionPlaceholder(
-                                            usesDoubleRow: WorkCharacterShelfLayout.usesDoubleRow(
-                                                bookCount: section.books.count,
-                                                threshold: WorkCharacterShelf.doubleRowThreshold
-                                            )
+                                        WorkCharacterShelfPlaceholder(
+                                            usesDoubleRow: WorkCharacterShelfLayout.usesDoubleRow(bookCount: section.bookCount)
                                         )
                                         .onScrollVisibilityChange(threshold: 0.01) { isVisible in
                                             updateSectionVisibility(
@@ -421,11 +418,8 @@ struct CharacterDetailView: View {
                                         }
                                         .transition(.opacity.combined(with: .scale(scale: 0.985)))
                                     } else {
-                                        WorkDetailLazySectionPlaceholder(
-                                            usesDoubleRow: WorkCharacterShelfLayout.usesDoubleRow(
-                                                bookCount: section.books.count,
-                                                threshold: WorkCharacterShelf.doubleRowThreshold
-                                            )
+                                        CharacterWorkShelfPlaceholder(
+                                            usesDoubleRow: WorkCharacterShelfLayout.usesDoubleRow(bookCount: section.bookCount)
                                         )
                                         .onScrollVisibilityChange(threshold: 0.01) { isVisible in
                                             updateSectionVisibility(
@@ -707,8 +701,8 @@ struct WorkDetailSectionRenderBudget: Equatable {
 }
 
 enum WorkCharacterShelfLayout {
-    static func usesDoubleRow(bookCount: Int, threshold: Int) -> Bool {
-        bookCount > threshold
+    static func usesDoubleRow(bookCount: Int) -> Bool {
+        bookCount > 6
     }
 
     static func columnCount(bookCount: Int, usesDoubleRow: Bool) -> Int {
@@ -747,7 +741,7 @@ private struct WorkDetailLoadingShell: View {
 
                     LazyVStack(alignment: .leading, spacing: 14) {
                         ForEach(0..<WorkDetailSectionRenderBudget.initialUnlockedCount, id: \.self) { index in
-                            WorkDetailLazySectionPlaceholder(usesDoubleRow: index == 0)
+                            WorkCharacterShelfPlaceholder(usesDoubleRow: index == 0)
                         }
                     }
                     .padding(.horizontal, 34)
@@ -887,74 +881,48 @@ private struct CharacterDetailLoadingHeroSkeleton: View {
     }
 }
 
-private struct WorkDetailLazySectionPlaceholder: View {
+struct WorkCharacterShelfPlaceholder: View {
     let usesDoubleRow: Bool
-
-    private var metrics: BookCardMetrics {
-        WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: usesDoubleRow)
-    }
+    @Environment(\.bookCardFields) private var cardFields
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: -18) {
+        let metrics = WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: usesDoubleRow)
+        let carouselHeight = WorkCharacterShelfMetrics.carouselHeight(
+            metrics: metrics, usesDoubleRow: usesDoubleRow, fields: cardFields
+        )
+        WorkCharacterShelfFrame(usesDoubleRow: usesDoubleRow, carouselHeight: carouselHeight) { _ in
             VStack(alignment: .leading, spacing: 10) {
                 RoundedRectangle(cornerRadius: 28)
                     .fill(.secondary.opacity(0.14))
-                    .frame(width: 260, height: usesDoubleRow ? 430 : 370)
+                    .frame(maxWidth: 260)
+                    .frame(height: usesDoubleRow ? 430 : 370)
 
                 RoundedRectangle(cornerRadius: 8)
                     .fill(.secondary.opacity(0.20))
-                    .frame(width: 210, height: 36)
+                    .frame(maxWidth: 210)
+                    .frame(height: 36)
                 RoundedRectangle(cornerRadius: 8)
                     .fill(.secondary.opacity(0.16))
-                    .frame(width: 96, height: 22)
+                    .frame(maxWidth: 96)
+                    .frame(height: 22)
             }
-            .frame(width: 340, height: usesDoubleRow ? 560 : 500, alignment: .bottomLeading)
-            .zIndex(1)
-
+        } carousel: { layout in
             HStack(alignment: .top, spacing: usesDoubleRow ? 16 : 20) {
                 ForEach(0..<5, id: \.self) { _ in
                     VStack(spacing: usesDoubleRow ? WorkCharacterShelfMetrics.doubleRowSpacing : 0) {
-                        cardPlaceholder
+                        TopicShelfCardPlaceholder(metrics: metrics, fields: cardFields)
                         if usesDoubleRow {
-                            cardPlaceholder
+                            TopicShelfCardPlaceholder(metrics: metrics, fields: cardFields)
                         }
                     }
                 }
             }
             .padding(.vertical, WorkCharacterShelfMetrics.verticalCardPadding / 2)
-            .padding(.leading, 28)
-            .padding(.trailing, 18)
-            .frame(height: WorkCharacterShelfMetrics.carouselHeight(metrics: metrics, usesDoubleRow: usesDoubleRow))
+            .padding(.horizontal, 18)
+            .frame(width: layout.contentColumnWidth, height: carouselHeight, alignment: .leading)
+            .clipped()
         }
-        .frame(maxWidth: .infinity, minHeight: usesDoubleRow ? 590 : 520, alignment: .bottomLeading)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WorkDetailSurfaceRole.shelf.cornerRadius, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: WorkDetailSurfaceRole.shelf.cornerRadius, style: .continuous)
-                .stroke(.white.opacity(0.12), lineWidth: 1)
-                .allowsHitTesting(false)
-        }
-        .shadow(color: .black.opacity(0.035), radius: 12, x: 0, y: 5)
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
         .redacted(reason: .placeholder)
-    }
-
-    private var cardPlaceholder: some View {
-        VStack(alignment: .leading, spacing: metrics.contentSpacing) {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(.secondary.opacity(0.16))
-                .frame(width: metrics.cardWidth, height: metrics.coverHeight)
-            RoundedRectangle(cornerRadius: 6)
-                .fill(.secondary.opacity(0.18))
-                .frame(width: metrics.cardWidth * 0.86, height: metrics.titleHeight)
-            RoundedRectangle(cornerRadius: 5)
-                .fill(.secondary.opacity(0.12))
-                .frame(width: metrics.cardWidth * 0.72, height: metrics.infoRowHeight)
-            RoundedRectangle(cornerRadius: 5)
-                .fill(.secondary.opacity(0.14))
-                .frame(width: metrics.cardWidth * 0.64, height: metrics.ratingHeight)
-        }
-        .frame(width: metrics.cardWidth, height: metrics.cardHeight, alignment: .topLeading)
     }
 }
 
@@ -1492,13 +1460,9 @@ private struct WorkCharacterShelf: View {
     @State private var characterImageAvailability = WorkCharacterImageAvailability.pending
 
     private let scrollStep = 3
-    static let doubleRowThreshold = 6
 
     private var usesDoubleRow: Bool {
-        WorkCharacterShelfLayout.usesDoubleRow(
-            bookCount: section.books.count,
-            threshold: Self.doubleRowThreshold
-        )
+        WorkCharacterShelfLayout.usesDoubleRow(bookCount: section.bookCount)
     }
 
     @Environment(\.bookCardFields) private var cardFields
@@ -1536,36 +1500,15 @@ private struct WorkCharacterShelf: View {
     }
 
     var body: some View {
-        GeometryReader { shelfProxy in
-            let layout = WorkCharacterShelfSplitMetrics.resolve(containerSize: shelfProxy.size)
-
-            HStack(spacing: 0) {
-                characterPanel(
-                    regionWidth: layout.characterColumnWidth,
-                    shelfHeight: shelfProxy.size.height,
-                    capsuleInsets: layout.capsuleInsets
-                )
-                .frame(width: layout.characterColumnWidth, height: shelfProxy.size.height, alignment: .bottom)
-
-                carouselLayer(
-                    contentWidth: layout.contentColumnWidth,
-                    fadeWidth: layout.viewportFadeWidth
-                )
-                .frame(width: layout.contentColumnWidth, height: shelfProxy.size.height, alignment: .bottomLeading)
-            }
-            .frame(width: shelfProxy.size.width, height: shelfProxy.size.height, alignment: .leading)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WorkDetailSurfaceRole.shelf.cornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: WorkDetailSurfaceRole.shelf.cornerRadius, style: .continuous)
-                    .stroke(.white.opacity(0.12), lineWidth: 1)
-                    .allowsHitTesting(false)
-            }
-            .shadow(color: .black.opacity(0.035), radius: 12, x: 0, y: 5)
+        WorkCharacterShelfFrame(usesDoubleRow: usesDoubleRow, carouselHeight: carouselHeight) { layout in
+            characterPanel(
+                regionWidth: layout.characterColumnWidth,
+                shelfHeight: layout.containerSize.height,
+                capsuleInsets: layout.capsuleInsets
+            )
+        } carousel: { layout in
+            carouselLayer(contentWidth: layout.contentColumnWidth, fadeWidth: layout.viewportFadeWidth)
         }
-        .frame(height: usesDoubleRow ? 590 : 520, alignment: .bottomLeading)
-        .frame(maxWidth: .infinity, alignment: .bottomLeading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 14)
     }
 
     private func carouselLayer(contentWidth: CGFloat, fadeWidth: CGFloat) -> some View {
@@ -1855,10 +1798,7 @@ private struct CharacterWorkShelf: View {
     private let scrollStep = 4
 
     private var usesDoubleRow: Bool {
-        WorkCharacterShelfLayout.usesDoubleRow(
-            bookCount: section.books.count,
-            threshold: WorkCharacterShelf.doubleRowThreshold
-        )
+        WorkCharacterShelfLayout.usesDoubleRow(bookCount: section.bookCount)
     }
 
     @Environment(\.bookCardFields) private var cardFields
@@ -2058,6 +1998,7 @@ private struct CharacterWorkShelf: View {
 
 private struct CharacterWorkShelfPlaceholder: View {
     let usesDoubleRow: Bool
+    @Environment(\.bookCardFields) private var cardFields
 
     private var metrics: BookCardMetrics {
         WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: usesDoubleRow)
@@ -2077,13 +2018,16 @@ private struct CharacterWorkShelfPlaceholder: View {
             HStack(alignment: .top, spacing: usesDoubleRow ? 16 : 20) {
                 ForEach(0..<6, id: \.self) { _ in
                     VStack(spacing: usesDoubleRow ? WorkCharacterShelfMetrics.doubleRowSpacing : 0) {
-                        cardPlaceholder
+                        TopicShelfCardPlaceholder(metrics: metrics, fields: cardFields)
                         if usesDoubleRow {
-                            cardPlaceholder
+                            TopicShelfCardPlaceholder(metrics: metrics, fields: cardFields)
                         }
                     }
                 }
             }
+            .padding(.vertical, WorkCharacterShelfMetrics.verticalCardPadding / 2)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            .clipped()
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 18)
@@ -2093,8 +2037,13 @@ private struct CharacterWorkShelfPlaceholder: View {
         .padding(.vertical, 8)
         .redacted(reason: .placeholder)
     }
+}
 
-    private var cardPlaceholder: some View {
+private struct TopicShelfCardPlaceholder: View {
+    let metrics: BookCardMetrics
+    let fields: BookCardFields
+
+    var body: some View {
         VStack(alignment: .leading, spacing: metrics.contentSpacing) {
             RoundedRectangle(cornerRadius: 8)
                 .fill(.secondary.opacity(0.16))
@@ -2102,20 +2051,58 @@ private struct CharacterWorkShelfPlaceholder: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(.secondary.opacity(0.18))
                 .frame(width: metrics.cardWidth * 0.86, height: metrics.titleHeight)
-            RoundedRectangle(cornerRadius: 5)
-                .fill(.secondary.opacity(0.12))
-                .frame(width: metrics.cardWidth * 0.72, height: metrics.infoRowHeight)
-            RoundedRectangle(cornerRadius: 5)
-                .fill(.secondary.opacity(0.14))
-                .frame(width: metrics.cardWidth * 0.64, height: metrics.ratingHeight)
+                .frame(height: metrics.regularTitleHeight, alignment: .top)
+            if !fields.isDisjoint(with: .metadata) {
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(.secondary.opacity(0.12))
+                    .frame(width: metrics.cardWidth * 0.72, height: metrics.infoRowHeight)
+            }
+            if metrics.showsRatingRow(for: fields) || !fields.isDisjoint(with: .reading) {
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(.secondary.opacity(0.14))
+                    .frame(width: metrics.cardWidth * 0.64, height: metrics.ratingHeight)
+            }
         }
-        .frame(width: metrics.cardWidth, height: metrics.cardHeight, alignment: .topLeading)
+        .frame(width: metrics.cardWidth, height: metrics.cardHeight(for: fields), alignment: .topLeading)
+    }
+}
+
+private struct WorkCharacterShelfFrame<CharacterPanel: View, Carousel: View>: View {
+    let usesDoubleRow: Bool
+    let carouselHeight: CGFloat
+    @ViewBuilder let characterPanel: (WorkCharacterShelfSplitMetrics) -> CharacterPanel
+    @ViewBuilder let carousel: (WorkCharacterShelfSplitMetrics) -> Carousel
+
+    var body: some View {
+        GeometryReader { proxy in
+            let layout = WorkCharacterShelfSplitMetrics.resolve(containerSize: proxy.size)
+            HStack(spacing: 0) {
+                characterPanel(layout)
+                    .frame(width: layout.characterColumnWidth, height: proxy.size.height, alignment: .bottom)
+                carousel(layout)
+                    .frame(width: layout.contentColumnWidth, height: proxy.size.height, alignment: .bottomLeading)
+            }
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WorkDetailSurfaceRole.shelf.cornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: WorkDetailSurfaceRole.shelf.cornerRadius, style: .continuous)
+                    .stroke(.white.opacity(0.12), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+            .shadow(color: .black.opacity(0.035), radius: 12, x: 0, y: 5)
+        }
+        .frame(height: WorkCharacterShelfMetrics.shelfHeight(usesDoubleRow: usesDoubleRow, carouselHeight: carouselHeight))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 14)
     }
 }
 
 enum WorkCharacterShelfMetrics {
     static func cardMetrics(usesDoubleRow: Bool) -> BookCardMetrics {
         BookCardMetrics(width: usesDoubleRow ? 136 : 168)
+    }
+
+    static func shelfHeight(usesDoubleRow: Bool, carouselHeight: CGFloat) -> CGFloat {
+        max(usesDoubleRow ? 590 : 520, carouselHeight)
     }
 
     static let verticalCardPadding: CGFloat = 20
