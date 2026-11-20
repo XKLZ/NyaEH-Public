@@ -296,17 +296,20 @@ struct BookCoverThumbnail: View {
     let cornerRadius: CGFloat
     let fitsEntireImage: Bool
     let showsFitBackground: Bool
+    let perspectivePreview: Bool
 
+    @Environment(\.coverPrivacyRule) private var privacy
     @State private var loadedCover: LoadedCoverState?
 
     init(book: LibraryBook, width: CGFloat, height: CGFloat, cornerRadius: CGFloat, fitsEntireImage: Bool = false,
-         showsFitBackground: Bool = true) {
+         showsFitBackground: Bool = true, perspectivePreview: Bool = false) {
         self.book = book
         self.width = width
         self.height = height
         self.cornerRadius = cornerRadius
         self.fitsEntireImage = fitsEntireImage
         self.showsFitBackground = showsFitBackground
+        self.perspectivePreview = perspectivePreview
 
         let pixelBucket = Self.targetPixelBucket(width: width, height: height)
         if let coverPath = book.coverPath,
@@ -326,45 +329,52 @@ struct BookCoverThumbnail: View {
 
     var body: some View {
         Group {
-            if let image = currentImage {
-                imageContent(image)
+            if fitsEntireImage {
+                thumbnail
             } else {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(showsFitBackground ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
-                    .overlay {
-                        Image(systemName: "book.closed")
-                            .foregroundStyle(.secondary)
-                    }
+                thumbnail.clipShape(.rect(cornerRadius: cornerRadius))
             }
         }
-        .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: fitsEntireImage ? 0 : cornerRadius))
         .task(id: loadRequest) {
             await loadImage(for: loadRequest)
         }
     }
 
-    @ViewBuilder
-    private func imageContent(_ image: NSImage) -> some View {
-        let displayMode = BookCoverThumbnailDisplayMode.resolve(imageSize: image.size, fitsEntireImage: fitsEntireImage)
-
-        ZStack {
-            if displayMode == .fit && showsFitBackground {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(.quaternary)
+    private var thumbnail: some View {
+        let bounds = CGSize(width: width, height: height)
+        let image = currentImage
+        let mode = BookCoverThumbnailDisplayMode.resolve(imageSize: image?.size ?? .zero, fitsEntireImage: fitsEntireImage)
+        let size = mode.imagePlane(imageSize: image?.size ?? .zero, bounds: bounds)
+        let radius = mode == .fit && !fitsEntireImage ? 0 : cornerRadius
+        return Group {
+            if let image {
+                let artwork = Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: mode == .fill ? .fill : .fit)
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
+                if privacy.mode != .off || perspectivePreview {
+                    CoverPrivacySurface(context: .init(bookID: book.id, path: book.coverPath, rule: privacy),
+                                        width: size.width, height: size.height, cornerRadius: radius,
+                                        perspectivePreview: perspectivePreview) { artwork }
+                } else {
+                    artwork.clipShape(.rect(cornerRadius: radius))
+                }
+            } else if privacy.mode == .conceal {
+                CoverPrivacySurface(context: .init(bookID: book.id, path: book.coverPath, rule: privacy),
+                                    width: width, height: height, cornerRadius: cornerRadius) {
+                    Image(systemName: "book.closed").foregroundStyle(.secondary)
+                }
+            } else {
+                Image(systemName: "book.closed")
+                    .foregroundStyle(.secondary)
+                    .frame(width: width, height: height)
             }
-
-            switch displayMode {
-            case .fill:
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-            case .fit:
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .clipShape(RoundedRectangle(cornerRadius: fitsEntireImage ? cornerRadius : 0))
-                    .frame(maxWidth: .infinity, alignment: showsFitBackground ? .center : .leading)
+        }
+        .frame(width: width, height: height, alignment: showsFitBackground ? .center : .leading)
+        .background {
+            if showsFitBackground && (image == nil || mode == .fit) {
+                RoundedRectangle(cornerRadius: cornerRadius).fill(.quaternary)
             }
         }
     }
@@ -438,6 +448,12 @@ struct BookCoverThumbnail: View {
 enum BookCoverThumbnailDisplayMode {
     case fill
     case fit
+
+    func imagePlane(imageSize: CGSize, bounds: CGSize) -> CGSize {
+        guard self == .fit, imageSize.width > 0, imageSize.height > 0 else { return bounds }
+        let scale = min(bounds.width / imageSize.width, bounds.height / imageSize.height)
+        return CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+    }
 
     static func resolve(imageSize: CGSize, fitsEntireImage: Bool = false) -> BookCoverThumbnailDisplayMode {
         if fitsEntireImage { return .fit }

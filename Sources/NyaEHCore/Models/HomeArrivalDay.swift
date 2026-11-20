@@ -4,6 +4,7 @@ struct HomeArrivalDay: Identifiable, Equatable, Sendable {
     let id: Date
     private(set) var bookIDs: [LibraryBook.ID]
     private(set) var hasMore: Bool
+    private(set) var hasEarlierDay = false
     static let previewLimit = 7
 
     /// The input uses the same newest-first ordering as the library's added-time sort.
@@ -13,7 +14,11 @@ struct HomeArrivalDay: Identifiable, Equatable, Sendable {
         for book in sorted where !book.isUserHidden {
             let date = Date(timeIntervalSince1970: Double(book.createdAt) / 1000)
             if days.isEmpty || date < currentStart {
-                guard days.count < 3, let day = calendar.dateInterval(of: .day, for: date) else { break }
+                if days.count == 3 {
+                    days[2].hasEarlierDay = true
+                    break
+                }
+                guard let day = calendar.dateInterval(of: .day, for: date) else { break }
                 currentStart = day.start
                 days.append(Self(id: day.start, bookIDs: [], hasMore: false))
             }
@@ -22,7 +27,6 @@ struct HomeArrivalDay: Identifiable, Equatable, Sendable {
                 days[index].bookIDs.append(book.id)
             } else {
                 days[index].hasMore = true
-                if days.count == 3 { break }
             }
         }
         return days

@@ -1,5 +1,13 @@
 import SwiftUI
 
+enum HomeToolbarTint: PreferenceKey {
+    static let defaultValue: Color? = nil
+
+    static func reduce(value: inout Color?, nextValue: () -> Color?) {
+        if let next = nextValue() { value = next }
+    }
+}
+
 struct HomeBookShowcase: View {
     let books: HomeShowcaseBooks
     let catalog: CatalogStore
@@ -9,21 +17,16 @@ struct HomeBookShowcase: View {
     let translatesTags: Bool
     let onSelect: (LibraryBook) -> Void
 
-    @Environment(\.bookCardActions) private var actions
     @Environment(\.nyaehAccentColor) private var accent
     @Environment(\.appearsActive) private var windowActive
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @FocusState private var focus: Control?
+    @FocusState private var focus: HomeShowcaseControl?
     @State private var selected: HomeShowcaseSelection?
     @State private var hovering = false
     @State private var visible = false
     @State private var groupHover = HomeShowcaseHover()
     @State private var tagPreview: LibraryBook.ID?
-    @State private var scrollPosition = ScrollPosition(edge: .top)
-
-    private enum Control: Hashable {
-        case cover, title, reader, heading(HomeShowcaseGroup), thumbnail(HomeShowcaseSelection)
-    }
+    @State private var coverColor: HomeShowcaseResult<String, NSColor>?
 
     var body: some View {
         if let current = books.resolve(selected), let book = books.book(for: current) {
@@ -69,8 +72,9 @@ struct HomeBookShowcase: View {
         let inset: CGFloat = width < 800 ? 14 : 24
         let coverWidth = min(width * 0.30, height * 0.77)
         let title = BookTitleFormatter.displayTitle(for: book, mode: titleMode)
-        let state = catalog.readingState(for: book)
-        let reading = BookCardReadingStatus(state: state, openCount: book.readCount)
+        let path = book.coverPath
+        let cached = path.flatMap { CoverThemeColorCache.shared.cachedColor(coverPath: $0) ?? coverColor?.value(for: $0) }
+        let tint = cached.map { Color(nsColor: $0) } ?? accent
         let controlsWidth = max(1, width - coverWidth - inset * 2)
         let selectorWidth = min(310, controlsWidth * 0.59)
         return HStack(spacing: 0) {
@@ -84,64 +88,34 @@ struct HomeBookShowcase: View {
             .focused($focus, equals: .cover)
             .showcaseKeys(navigate)
             .accessibilityLabel(title)
+            .contextMenu {
+                BookCardMenu(book: book, titleDisplayMode: titleMode, localizer: localizer,
+                             selection: nil, beforeNavigation: nil, showDetail: onSelect)
+            }
 
-            VStack(alignment: .leading, spacing: 12) {
-                ScrollView(.vertical) {
-                    VStack(alignment: .leading, spacing: height < 340 ? 8 : 14) {
-                        Button {
-                            if let current = books.resolve(selected), let target = books.book(for: current) { onSelect(target) }
-                        } label: {
-                            Text(title)
-                                .font(.system(size: min(36, max(28, width / 19)), weight: .bold))
-                                .multilineTextAlignment(.leading)
-                                .lineLimit(3)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .buttonStyle(.plain)
-                        .focused($focus, equals: .title)
-                        .showcaseKeys(navigate)
-                        .accessibilityLabel(title)
-                        .help(title)
-
-                        HomeShowcaseDetails(book: book, catalog: catalog, translates: translatesTags, localizer: localizer,
-                                            tagPreview: $tagPreview)
-                    }
-                    .showcaseFade(book.id, reduceMotion: reduceMotion)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .scrollBounceBehavior(.basedOnSize)
-                .defaultScrollAnchor(.top, for: .alignment)
-                .scrollPosition($scrollPosition)
-
-                HStack(alignment: .bottom, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        BookCardReadingRow(reading: reading, fields: .reading, localizer: localizer, size: .showcase)
-                            .frame(maxWidth: 240, minHeight: 24, maxHeight: 24, alignment: .leading)
-                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: reading)
-                        Button { actions?.read(book) } label: {
-                            Label(localizer.string(BookDetailReadingActionPolicy.titleKey(for: state)), systemImage: "book")
-                                .lineLimit(1)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .tint(accent)
-                        .focused($focus, equals: .reader)
-                        .showcaseKeys(navigate)
-                        .accessibilityIdentifier("home.feature.read")
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    shelfSelector(selection, width: selectorWidth, height: height)
-                }
+            HomeShowcaseInformation(book: book, title: title, width: width, height: height,
+                                    catalog: catalog, translates: translatesTags, localizer: localizer,
+                                    progressTint: tint, readIdentifier: "home.feature.read", focus: $focus,
+                                    tagPreview: $tagPreview, onSelect: onSelect, navigate: navigate) {
+                shelfSelector(selection, width: selectorWidth, height: height)
             }
             .padding(inset)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(width: width, height: height)
         .background {
-            HomeShowcaseBackground(path: book.coverPath)
+            HomePanelBackground(tint: tint, symbol: selection.group.backgroundSymbol)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: tint)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .onChange(of: book.id) { tagPreview = nil; scrollPosition.scrollTo(edge: .top) }
+        .modifier(HomePanelSurface())
+        .preference(key: HomeToolbarTint.self, value: tint)
+        .task(id: path) {
+            guard let path else { coverColor = nil; return }
+            let cache = CoverThemeColorCache.shared
+            if cache.cachedColor(coverPath: path) == nil { _ = await cache.resolveColor(coverPath: path) }
+            guard !Task.isCancelled, let color = cache.cachedColor(coverPath: path) else { return }
+            coverColor = .init(key: path, value: color)
+        }
     }
 
     private func shelfSelector(_ current: HomeShowcaseSelection, width: CGFloat, height: CGFloat) -> some View {
@@ -154,7 +128,7 @@ struct HomeBookShowcase: View {
                         if group != current.group { selected = books.first(in: group) }
                     } label: {
                         Text(localizer.string(group.title))
-                            .font(.caption.weight(.medium))
+                            .font(HomeShowcaseTypography.selector)
                             .lineLimit(1).minimumScaleFactor(0.75)
                             .foregroundStyle(group == current.group ? .primary : .secondary)
                             .padding(.vertical, 4)
@@ -224,7 +198,7 @@ struct HomeBookShowcase: View {
     }
 }
 
-private extension View {
+extension View {
     func showcaseKeys(_ handle: @escaping (KeyPress) -> KeyPress.Result) -> some View {
         onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow, .escape], phases: .down, action: handle)
     }
@@ -241,173 +215,8 @@ extension View {
 private struct ShowcaseDissolve: Transition {
     func body(content: Content, phase: TransitionPhase) -> some View {
         content.opacity(phase.isIdentity ? 1 : 0)
+            .transformEnvironment(\.coverPrivacyRevealAllowed) { $0 = $0 && phase.isIdentity }
             .allowsHitTesting(phase.isIdentity)
             .accessibilityHidden(!phase.isIdentity)
-    }
-}
-
-private struct HomeShowcaseBackground: View {
-    let path: String?
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.nyaehAccentColor) private var accent
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var lastColor: NSColor?
-
-    var body: some View {
-        let cached = path.flatMap { CoverThemeColorCache.shared.cachedColor(coverPath: $0) ?? lastColor }
-        let tint = cached.map { Color(nsColor: $0) } ?? accent
-        Color(nsColor: .windowBackgroundColor)
-            .overlay {
-                LinearGradient(colors: [tint.opacity(scheme == .dark ? 0.56 : 0.46), tint.opacity(0.16), tint.opacity(0.07)],
-                               startPoint: .leading, endPoint: .trailing)
-            }
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: tint)
-            .task(id: path) {
-                let cache = CoverThemeColorCache.shared
-                guard let path else { lastColor = nil; return }
-                if cache.cachedColor(coverPath: path) == nil { _ = await cache.resolveColor(coverPath: path) }
-                guard !Task.isCancelled else { return }
-                lastColor = cache.cachedColor(coverPath: path)
-            }
-    }
-}
-
-private struct HomeShowcaseDetails: View {
-    let book: LibraryBook
-    let catalog: CatalogStore
-    let translates: Bool
-    let localizer: AppLocalizer
-    @Binding var tagPreview: LibraryBook.ID?
-    @State private var credits: HomeShowcaseResult<Request, [TagDisplaySummary]>?
-
-    private struct Request: Equatable {
-        let id: LibraryBook.ID
-        let tags: String
-        let revision: Int
-        let translates: Bool
-    }
-
-    var body: some View {
-        let request = Request(id: book.id, tags: book.tags, revision: catalog.tagSummaryRevision, translates: translates)
-        let tags = credits?.value(for: request) ?? []
-        let metadata = BookCardMetadata(book: book)
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                credit("person", .tagNamespaceArtist, tags.filter { $0.namespace == "artist" }.map(\.displayText))
-                credit("person.2", .tagNamespaceGroup, tags.filter { $0.namespace == "group" }.map(\.displayText))
-                if let id = book.collectionID, let name = catalog.collection(id: String(id))?.name {
-                    credit("books.vertical", .series, [name])
-                }
-            }
-
-            SearchResultTagFlowLayout(spacing: 10, lineSpacing: 6) {
-                if let code = metadata.language {
-                    let language = BookCardLanguageLabel(code, interfaceLanguage: localizer.language)
-                    Text(language.abbreviation).fontWeight(.semibold)
-                        .padding(.horizontal, 6).frame(height: 24)
-                        .background(.secondary.opacity(0.13), in: RoundedRectangle(cornerRadius: 4))
-                        .help(language.fullName).accessibilityLabel(language.fullName)
-                }
-                if metadata.isFullColor {
-                    glyph("paintpalette", localizer.string(.fullColor))
-                }
-                if let censorship = metadata.censorship {
-                    glyph(censorship == "uncensored" ? "eye" : "eye.slash", localizer.versionCensorshipDescription(censorship))
-                }
-                if let pages = metadata.pages { Text(localizer.bookPageCount(pages)).monospacedDigit().frame(height: 24) }
-                if let rating = metadata.rating { BookCardRating(rating: rating, localizer: localizer, size: .showcase) }
-            }
-            .font(.callout)
-            let content = tags.filter { !["language", "artist", "group"].contains($0.namespace) }
-            if !content.isEmpty {
-                HomeShowcaseTags(tags: content, showingAll: Binding(
-                    get: { tagPreview == book.id },
-                    set: { open in
-                        if open { tagPreview = book.id }
-                        else if tagPreview == book.id { tagPreview = nil }
-                    }
-                ))
-            }
-        }
-        .task(id: request) {
-            let tags = await catalog.searchResultTags(for: book, isTagTranslationEnabled: translates)
-            guard !Task.isCancelled else { return }
-            credits = .init(key: request, value: tags)
-        }
-    }
-
-    @ViewBuilder
-    private func credit(_ icon: String, _ key: L10nKey, _ names: [String]) -> some View {
-        if !names.isEmpty {
-            let text = names.joined(separator: ", ")
-            Label(text, systemImage: icon).font(.callout).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .help(localizer.string(key)).accessibilityLabel("\(localizer.string(key)) \(text)")
-        }
-    }
-
-    private func glyph(_ icon: String, _ description: String) -> some View {
-        Image(systemName: icon).frame(height: 24).help(description).accessibilityLabel(description)
-    }
-}
-
-private struct HomeShowcaseTags: View {
-    let tags: [TagDisplaySummary]
-    @Binding var showingAll: Bool
-    @FocusState private var moreFocused: Bool
-    @State private var width: CGFloat = 0
-    private let gap: CGFloat = 5
-    private let fontSize: CGFloat = 11
-
-    private func chipWidth(_ text: String) -> CGFloat {
-        ceil((text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: fontSize)]).width) + 12
-    }
-
-    var body: some View {
-        let layout = HomeTagPreviewLayout(widths: tags.map { chipWidth($0.displayText) }, available: width,
-                                          gap: gap, moreWidth: { chipWidth("+\($0)") })
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(layout.rows.indices, id: \.self) { row in
-                HStack(spacing: gap) {
-                    ForEach(layout.rows[row], id: \.self) { index in
-                        chip(tags[index].displayText)
-                    }
-                    if row == layout.rows.count - 1 && layout.hidden > 0 {
-                        Button { showingAll = true } label: { chip("+\(layout.hidden)") }
-                            .buttonStyle(.plain)
-                            .focused($moreFocused)
-                            .onHover { if $0 { showingAll = true } }
-                            .onChange(of: moreFocused) { _, focused in if focused { showingAll = true } }
-                            .popover(isPresented: $showingAll, arrowEdge: .bottom) {
-                                ScrollView {
-                                    SearchResultTagFlowLayout(spacing: gap, lineSpacing: 5, wrapsLongItems: true) {
-                                        ForEach(tags) { tag in
-                                            Text(tag.displayText).font(.callout)
-                                                .padding(.horizontal, 6).padding(.vertical, 3)
-                                                .background(.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 4))
-                                        }
-                                    }
-                                    .padding(12)
-                                }
-                                .frame(width: 320)
-                                .frame(maxHeight: 200)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .onExitCommand { showingAll = false }
-                            }
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-    }
-
-    private func chip(_ text: String) -> some View {
-        Text(text).font(.system(size: fontSize))
-            .lineLimit(1).foregroundStyle(.secondary)
-            .padding(.horizontal, 6).frame(height: 19)
-            .background(.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 4))
-            .frame(maxWidth: min(width, chipWidth(text)), alignment: .leading)
-            .help(text)
     }
 }

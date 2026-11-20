@@ -27,6 +27,23 @@ enum L10nKey: String, CaseIterable, Sendable {
     case bookTitleCompact
     case bookTitleCompactJapanese
     case cardDisplay
+    case coverPrivacy
+    case coverPrivacyScope
+    case coverPrivacyGlobal
+    case coverPrivacyMode
+    case coverPrivacyBlur
+    case coverPrivacyConceal
+    case coverPrivacyStrength
+    case coverPrivacyInherit
+    case coverPrivacyInheritStrength
+    case coverPrivacyReveal
+    case coverPrivacyAfter
+    case coverPrivacyNever
+    case coverPrivacySeconds
+    case coverPrivacyResetPage
+    case coverPrivacyPreview
+    case coverPrivacyCategory
+    case coverPrivacyBookDetail
     case cardMetadata
     case cardEvaluation
     case cardReading

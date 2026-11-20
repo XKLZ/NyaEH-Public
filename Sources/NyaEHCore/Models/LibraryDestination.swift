@@ -41,6 +41,14 @@ enum LibraryDestination: Hashable, Identifiable, Sendable {
         }
     }
 
+    var coverPrivacyPage: CoverPrivacyPage? {
+        switch self {
+        case .home: .home
+        case .search: .search
+        default: nil
+        }
+    }
+
     var sidebarDestination: LibraryDestination {
         self
     }
@@ -62,6 +70,15 @@ enum LibraryRoute: Hashable, Identifiable, Sendable {
             return "character.\(tagID)"
         case .bookDetail(let bookID):
             return "book.\(bookID)"
+        }
+    }
+}
+
+extension LibraryRoute {
+    var coverPrivacyPage: CoverPrivacyPage? {
+        switch self {
+        case .bookDetail, .collectionDetail: nil
+        case .workDetail, .characterDetail: .topic
         }
     }
 }

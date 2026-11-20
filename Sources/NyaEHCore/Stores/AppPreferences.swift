@@ -341,6 +341,14 @@ final class AppPreferences {
         }
     }
 
+    var coverPrivacy: CoverPrivacyPreferences {
+        didSet {
+            if let data = try? JSONEncoder().encode(coverPrivacy) {
+                userDefaults.set(data, forKey: Keys.coverPrivacy)
+            }
+        }
+    }
+
     var bookCardFields: BookCardFields {
         didSet { userDefaults.set(bookCardFields.rawValue, forKey: Keys.bookCardFields) }
     }
@@ -540,6 +548,8 @@ final class AppPreferences {
         advancedSearchPageSizeStorage = Self.normalizedPageSize(userDefaults.object(forKey: Keys.advancedSearchPageSize) as? Int ?? PageSizeOption.defaultValue)
         libraryCollectionPageSizeStorage = Self.normalizedPageSize(userDefaults.object(forKey: Keys.libraryCollectionPageSize) as? Int ?? PageSizeOption.defaultValue)
         tagCategoryPageSize = Self.normalizedPageSize(userDefaults.object(forKey: Keys.tagCategoryPageSize) as? Int ?? PageSizeOption.defaultValue)
+        coverPrivacy = userDefaults.data(forKey: Keys.coverPrivacy)
+            .flatMap { try? JSONDecoder().decode(CoverPrivacyPreferences.self, from: $0) } ?? CoverPrivacyPreferences()
         bookCardFields = BookCardFields(rawValue: userDefaults.object(forKey: Keys.bookCardFields) as? Int
                                        ?? ((userDefaults.object(forKey: "NyaEH.cardFields") as? Int ?? BookCardFields.all.rawValue) | BookCardFields.directRead.rawValue)).intersection(.all)
         homeCardWidth = Self.normalizedCardWidth(userDefaults.object(forKey: Keys.homeCardWidth) as? Int ?? BookCardMetrics.defaultWidth)
@@ -695,6 +705,7 @@ final class AppPreferences {
         static let homeInsightChartsExpanded = "NyaEH.home.insightChartsExpanded"
         static let libraryCollectionPageSize = "NyaEH.pagination.libraryCollection.pageSize"
         static let tagCategoryPageSize = "NyaEH.pagination.tagCategory.pageSize"
+        static let coverPrivacy = "NyaEH.coverPrivacy.v1"
         static let bookCardFields = "NyaEH.cardFields.v2"
         static let homeCardWidth = "NyaEH.cardWidth.home"
         static let advancedSearchCardWidth = "NyaEH.cardWidth.advancedSearch"

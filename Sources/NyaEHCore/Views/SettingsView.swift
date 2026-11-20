@@ -195,6 +195,8 @@ private struct GeneralSettingsPane: View {
                     .disabled(preferences.bookCardFields == .all)
             }
 
+            CoverPrivacySettings(preferences: preferences, localizer: localizer)
+
             if let updateManager {
                 Section(localizer.string(.softwareUpdates)) {
                     Button(localizer.string(.checkForUpdates)) {

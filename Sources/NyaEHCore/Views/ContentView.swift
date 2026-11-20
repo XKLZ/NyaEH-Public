@@ -79,7 +79,6 @@ struct ContentView: View {
                 advancedSearchPageSize: $preferences.advancedSearchPageSize,
                 isAdvancedSearchFacetPanelExpanded: $preferences.isAdvancedSearchFacetPanelExpanded,
                 isAdvancedSearchHeaderPinned: $preferences.isAdvancedSearchHeaderPinned,
-                isHomeInsightChartsExpanded: $preferences.isHomeInsightChartsExpanded,
                 libraryCollectionPageSize: $preferences.libraryCollectionPageSize,
                 tagCategoryPageSize: $preferences.tagCategoryPageSize,
                 homeCardWidth: $preferences.homeCardWidth,
@@ -118,8 +117,8 @@ struct ContentView: View {
         .onDisappear { cardActions.closeReader() }
         .environment(\.bookCardCatalog, store)
         .environment(\.bookCardFields, preferences.bookCardFields)
-        .toolbar(removing: hasImmersiveDetailToolbar || showsTagCategoryToolbar ? .title : nil)
-        .toolbarBackgroundVisibility(hasImmersiveDetailToolbar ? .hidden : .automatic, for: .windowToolbar)
+        .toolbar(removing: usesImmersiveToolbar || showsTagCategoryToolbar ? .title : nil)
+        .toolbarBackgroundVisibility(usesImmersiveToolbar ? .hidden : .automatic, for: .windowToolbar)
         .focusedSceneValue(\.nyaehAppCommands, appCommandContext)
         .onExitCommand {
             guard !detailPath.isEmpty else {
@@ -271,9 +270,9 @@ struct ContentView: View {
         return false
     }
 
-    private var hasImmersiveDetailToolbar: Bool {
+    private var usesImmersiveToolbar: Bool {
         guard let route = detailPath.last else {
-            return false
+            return baseDestination == .home
         }
         switch route {
         case .workDetail, .characterDetail, .bookDetail:
@@ -466,7 +465,6 @@ private struct LibraryContentView: View {
     @Binding var advancedSearchPageSize: Int
     @Binding var isAdvancedSearchFacetPanelExpanded: Bool
     @Binding var isAdvancedSearchHeaderPinned: Bool
-    @Binding var isHomeInsightChartsExpanded: Bool
     @Binding var libraryCollectionPageSize: Int
     @Binding var tagCategoryPageSize: Int
     @Binding var homeCardWidth: Int
@@ -498,6 +496,8 @@ private struct LibraryContentView: View {
     var body: some View {
         ZStack {
             content(for: baseDestination)
+                .environment(\.coverPrivacyRule, baseDestination.coverPrivacyPage.map { preferences.coverPrivacy.rule(for: $0) } ?? CoverPrivacyRule())
+                .environment(\.coverPrivacyRevealAllowed, detailPath.isEmpty)
                 .environment(\.tagVisualDropTargetsEnabled, detailPath.isEmpty)
                 .allowsHitTesting(detailPath.isEmpty)
                 .zIndex(0)
@@ -565,6 +565,8 @@ private struct LibraryContentView: View {
         let isTopRoute = layerState == .active
 
         return routeContent(for: route, layerState: layerState)
+            .environment(\.coverPrivacyRule, route.coverPrivacyPage.map { preferences.coverPrivacy.rule(for: $0) } ?? CoverPrivacyRule())
+            .environment(\.coverPrivacyRevealAllowed, isTopRoute)
             .environment(\.tagVisualDropTargetsEnabled, isTopRoute)
             .allowsHitTesting(LibraryRoutePresentation.allowsHitTesting(layerState: layerState))
             .transition(routeTransition(for: route))
@@ -588,8 +590,6 @@ private struct LibraryContentView: View {
                 pageIsActive: detailPath.isEmpty,
                 isTagTranslationEnabled: isTagTranslationEnabled,
                 titleDisplayMode: titleDisplayMode,
-                cardWidth: $homeCardWidth,
-                isInsightChartsExpanded: $isHomeInsightChartsExpanded,
                 localizer: localizer,
                 onSelect: { book in openBook(book, source: .home) },
                 onOpenFavorites: {
@@ -599,7 +599,6 @@ private struct LibraryContentView: View {
                     }
                 },
                 onOpenRecentSearch: openRecentSearch,
-                onSelectInsightTag: openHomeInsightTag,
                 onImport: {
                     baseDestination = .importLibrary
                     updateDetailPath(LibraryNavigationPathReducer.pathAfterSelectingBaseDestination())
@@ -1070,10 +1069,6 @@ private struct LibraryContentView: View {
         case .characterDetail:
             openCharacter(tag)
         }
-    }
-
-    private func openHomeInsightTag(_ tag: TagDisplaySummary) {
-        openSearch(for: tag)
     }
 
     private func openRecentSearch() {

@@ -1,27 +1,19 @@
-// 本文件实现首页推荐和洞察区域，主要消费 HomeStore 预先构建的派生书籍集合。
+// 首页展示与调试书架共用目录中预先整理好的书籍集合。
 
 import SwiftUI
 
 private let homeContentPadding: CGFloat = 24
 
 struct LibraryHomeView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var store: HomeStore
     let pageIsActive: Bool
     let isTagTranslationEnabled: Bool
     let titleDisplayMode: BookTitleDisplayMode
-    @Binding var cardWidth: Int
-    @Binding var isInsightChartsExpanded: Bool
     let localizer: AppLocalizer
     let onSelect: (LibraryBook) -> Void
     let onOpenFavorites: () -> Void
     let onOpenRecentSearch: () -> Void
-    let onSelectInsightTag: (TagDisplaySummary) -> Void
-
-    private var hasCards: Bool {
-        !store.catalog.homeFavoritePreview.books.isEmpty
-            || !store.catalog.recentlyAddedBooks.isEmpty
-    }
-
     let onImport: () -> Void
 
     var body: some View {
@@ -29,8 +21,12 @@ struct LibraryHomeView: View {
             let catalog = store.catalog
             let books = HomeShowcaseBooks(continuing: catalog.continueReadingBooks, recent: catalog.recentlyViewedBooks,
                                           recommended: catalog.recommendedBooks)
+            let hasLead = books.resolve(nil) != nil
+            let topPadding: CGFloat = 16
+            let gap = homeContentPadding
+            let cardHeight = max(260, (proxy.size.height - topPadding - gap - homeContentPadding) / 2)
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 26) {
+                LazyVStack(alignment: .leading, spacing: gap) {
                     if catalog.books.isEmpty {
                         ContentUnavailableView {
                             Label(localizer.string(.noBooks), systemImage: "books.vertical")
@@ -41,322 +37,37 @@ struct LibraryHomeView: View {
                         }
                         .frame(maxWidth: .infinity, minHeight: 240)
                     } else {
-                        if books.resolve(nil) != nil {
+                        if hasLead {
                             HomeBookShowcase(books: books, catalog: catalog, pageIsActive: pageIsActive,
                                              titleMode: titleDisplayMode, localizer: localizer,
                                              translatesTags: isTagTranslationEnabled, onSelect: onSelect)
-                                .frame(height: proxy.size.height / 2)
+                                .frame(height: cardHeight)
                         }
 
                         HomeCollectionPanels(favorites: catalog.homeFavoritePreview,
-                                             days: catalog.homeArrivalDays, height: proxy.size.height / 2,
-                                             cardWidth: cardWidth, titleMode: titleDisplayMode, localizer: localizer,
+                                             days: catalog.homeArrivalDays, height: cardHeight,
+                                             cardWidth: BookCardMetrics.maximumWidth, catalog: catalog,
+                                             translatesTags: isTagTranslationEnabled, titleMode: titleDisplayMode, localizer: localizer,
                                              onSelect: onSelect, onFavorites: onOpenFavorites, onSearch: onOpenRecentSearch)
-
-                        HomeInsights(charts: catalog.homeInsightCharts,
-                                     isLoadingCharts: catalog.isLoadingHomeInsightCharts, chartError: catalog.homeInsightChartError,
-                                     isChartsExpanded: $isInsightChartsExpanded, localizer: localizer, onSelectTag: onSelectInsightTag)
-                            .task(id: "\(isTagTranslationEnabled)-\(catalog.tagSummaryRevision)-\(isInsightChartsExpanded)") {
-                                if isInsightChartsExpanded {
-                                    catalog.loadHomeInsightCharts(isTagTranslationEnabled: isTagTranslationEnabled)
-                                }
-                            }
                     }
                 }
-                .padding(homeContentPadding)
+                .padding(.horizontal, homeContentPadding)
+                .padding(.top, topPadding)
+                .padding(.bottom, homeContentPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            if hasCards {
-                FloatingGlassPanel {
-                    CardSizeSliderControl(cardWidth: $cardWidth)
-                }
-                .fixedSize()
-                .padding(.trailing, 16)
-                .padding(.bottom, 12)
+            .backgroundPreferenceValue(HomeToolbarTint.self) { tint in
+                LinearGradient(stops: [
+                    .init(color: (tint ?? .clear).opacity(0.18), location: 0),
+                    .init(color: .clear, location: 0.18)
+                ], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea(.container, edges: .top)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: tint)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
         }
         .navigationTitle(localizer.string(.home))
-        .focusedSceneValue(\.nyaehViewCommands, viewCommandContext)
-    }
-
-    private var viewCommandContext: NyaEHViewCommandContext {
-        NyaEHViewCommandContext(
-            canIncreaseCardSize: cardWidth < BookCardMetrics.maximumWidth,
-            increaseCardSize: { cardWidth = BookCardMetrics.normalizedWidth(cardWidth + BookCardMetrics.step) },
-            canDecreaseCardSize: cardWidth > BookCardMetrics.minimumWidth,
-            decreaseCardSize: { cardWidth = BookCardMetrics.normalizedWidth(cardWidth - BookCardMetrics.step) },
-            layout: nil,
-            setLayout: { _ in },
-            sortStrategy: nil,
-            setSortStrategy: { _ in },
-            searchResultSortKey: nil,
-            setSearchResultSortKey: { _ in },
-            sortDirection: nil,
-            setSortDirection: { _ in }
-        )
-    }
-}
-
-private struct HomeInsights: View {
-    let charts: HomeInsightCharts
-    let isLoadingCharts: Bool
-    let chartError: String?
-    @Binding var isChartsExpanded: Bool
-    let localizer: AppLocalizer
-    let onSelectTag: (TagDisplaySummary) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Button {
-                withAnimation(.smooth(duration: 0.32)) { isChartsExpanded.toggle() }
-            } label: {
-                HStack {
-                    Text(localizer.string(.homeInsights)).font(.title2.weight(.semibold))
-                    Spacer()
-                    Image(systemName: isChartsExpanded ? "chevron.up" : "chevron.down")
-                        .foregroundStyle(.secondary)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            HomeInsightRevealContainer(isExpanded: isChartsExpanded) { insightGrid }
-        }
-    }
-
-
-    private var insightGrid: some View {
-        ViewThatFits(in: .horizontal) {
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: 14),
-                    GridItem(.flexible(), spacing: 14),
-                    GridItem(.flexible(), spacing: 14)
-                ],
-                spacing: 14
-            ) {
-                ForEach(HomeInsightChartKind.allCases) { kind in
-                    insightTile(kind)
-                }
-            }
-            .frame(minWidth: 900, maxWidth: .infinity)
-
-            VStack(spacing: 14) {
-                ForEach(HomeInsightChartKind.allCases) { kind in
-                    insightTile(kind)
-                }
-            }
-        }
-    }
-
-    private func insightTile(_ kind: HomeInsightChartKind) -> some View {
-        HomeInsightChartTile(
-            kind: kind,
-            tags: charts[kind],
-            isLoading: isLoadingCharts,
-            error: chartError,
-            localizer: localizer,
-            onSelectTag: onSelectTag
-        )
-        .frame(maxWidth: .infinity)
-    }
-
-}
-
-private struct HomeInsightRevealContainer<Content: View>: View {
-    let isExpanded: Bool
-    @ViewBuilder let content: () -> Content
-
-    @State private var measuredHeight: CGFloat = 0
-    @State private var isContentMounted = false
-    @State private var unmountTask: Task<Void, Never>?
-
-    private static var animation: Animation {
-        .smooth(duration: 0.32)
-    }
-
-    private static var unmountDelayNanoseconds: UInt64 {
-        360_000_000
-    }
-
-    private var shouldRenderContent: Bool {
-        isExpanded || isContentMounted
-    }
-
-    var body: some View {
-        Group {
-            if shouldRenderContent {
-                content()
-                    .background {
-                        GeometryReader { proxy in
-                            Color.clear.preference(
-                                key: HomeInsightRevealHeightKey.self,
-                                value: proxy.size.height
-                            )
-                        }
-                    }
-                    .opacity(isExpanded ? 1 : 0)
-                    .scaleEffect(isExpanded ? 1 : 0.985, anchor: .top)
-                    .frame(height: isExpanded ? measuredHeight : 0, alignment: .top)
-                    .clipped()
-            }
-        }
-        .onAppear {
-            isContentMounted = isExpanded
-        }
-        .onChange(of: isExpanded) { _, isExpanded in
-            unmountTask?.cancel()
-            if isExpanded {
-                isContentMounted = true
-            } else {
-                scheduleUnmount()
-            }
-        }
-        .onPreferenceChange(HomeInsightRevealHeightKey.self) { height in
-            guard height > 0, abs(height - measuredHeight) > 0.5 else {
-                return
-            }
-            if isExpanded {
-                withAnimation(Self.animation) {
-                    measuredHeight = height
-                }
-            } else {
-                measuredHeight = height
-            }
-        }
-        .onDisappear {
-            unmountTask?.cancel()
-        }
-    }
-
-    private func scheduleUnmount() {
-        unmountTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: Self.unmountDelayNanoseconds)
-            guard !Task.isCancelled, !isExpanded else {
-                return
-            }
-            isContentMounted = false
-        }
-    }
-}
-
-private struct HomeInsightRevealHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
-private struct HomeInsightChartTile: View {
-    let kind: HomeInsightChartKind
-    let tags: [TagDisplaySummary]
-    let isLoading: Bool
-    let error: String?
-    let localizer: AppLocalizer
-    let onSelectTag: (TagDisplaySummary) -> Void
-
-    private var maxCount: Int {
-        max(tags.map(\.count).max() ?? 0, 1)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Label(localizer.string(kind.titleKey), systemImage: kind.systemImage)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.primary)
-
-            content
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 18)
-        .frame(maxWidth: .infinity, minHeight: 250, alignment: .topLeading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(.secondary.opacity(0.12), lineWidth: 1)
-        }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if isLoading && tags.isEmpty {
-            ProgressView()
-                .controlSize(.small)
-                .frame(maxWidth: .infinity, minHeight: 164, alignment: .center)
-        } else if error != nil && tags.isEmpty {
-            Text(localizer.string(.homeInsightLoadFailed))
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, minHeight: 164, alignment: .center)
-        } else if tags.isEmpty {
-            Text(localizer.string(.homeInsightNoData))
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, minHeight: 164, alignment: .center)
-        } else {
-            ScrollView {
-                LazyVStack(spacing: 10) {
-                    ForEach(tags) { tag in
-                        Button {
-                            onSelectTag(tag)
-                        } label: {
-                            HomeInsightChartRow(
-                                tag: tag,
-                                fraction: HomeInsightChartScale.sqrtFraction(
-                                    count: tag.count,
-                                    maxCount: maxCount
-                                )
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.trailing, 2)
-            }
-            .scrollIndicators(.automatic)
-            .frame(minHeight: 164, maxHeight: 188)
-        }
-    }
-}
-
-private struct HomeInsightChartRow: View {
-    let tag: TagDisplaySummary
-    let fraction: Double
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Text(tag.displayText)
-                .font(.callout.weight(.medium))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(width: 118, alignment: .leading)
-
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(.secondary.opacity(0.12))
-                    Capsule()
-                        .fill(.tint.opacity(0.5))
-                        .frame(width: max(8, proxy.size.width * min(max(CGFloat(fraction), 0), 1)))
-                }
-            }
-            .frame(height: 11)
-
-            Text(tag.count.formatted())
-                .font(.callout.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(minWidth: 48, alignment: .trailing)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .contentShape(Rectangle())
-        .background {
-            RoundedRectangle(cornerRadius: 7)
-                .fill(.primary.opacity(0.001))
-        }
     }
 }
 

@@ -3,6 +3,14 @@ import Foundation
 enum HomeShowcaseGroup: CaseIterable, Hashable {
     case continuing, recent, recommended
 
+    var backgroundSymbol: String {
+        switch self {
+        case .continuing: "book.pages"
+        case .recent: "clock.arrow.circlepath"
+        case .recommended: "sparkles"
+        }
+    }
+
     var title: L10nKey {
         switch self {
         case .continuing: .readerContinue
@@ -102,14 +110,14 @@ struct HomeTagPreviewLayout {
     var rows: [[Int]] = []
     var hidden = 0
 
-    init(widths: [CGFloat], available: CGFloat, gap: CGFloat, moreWidth: (Int) -> CGFloat) {
+    init(widths: [CGFloat], available: CGFloat, gap: CGFloat, maximumRows: Int = 2, moreWidth: (Int) -> CGFloat) {
         guard available > 0, !widths.isEmpty else { return }
         var used: CGFloat = 0
         rows = [[]]
         for (index, width) in widths.enumerated() {
             let item = min(width, available)
             if !rows[rows.count - 1].isEmpty && used + gap + item > available {
-                guard rows.count < 2 else { break }
+                guard rows.count < maximumRows else { break }
                 rows.append([])
                 used = 0
             }
@@ -118,9 +126,10 @@ struct HomeTagPreviewLayout {
         }
         hidden = widths.count - rows.reduce(0) { $0 + $1.count }
         guard hidden > 0 else { return }
-        while let last = rows[1].last, used + gap + moreWidth(hidden) > available {
-            rows[1].removeLast()
-            used -= min(widths[last], available) + (rows[1].isEmpty ? 0 : gap)
+        let finalRow = rows.count - 1
+        while let last = rows[finalRow].last, used + gap + moreWidth(hidden) > available {
+            rows[finalRow].removeLast()
+            used -= min(widths[last], available) + (rows[finalRow].isEmpty ? 0 : gap)
             hidden += 1
         }
     }

@@ -756,17 +756,19 @@ struct CardPageProgress: View, Animatable {
     let total: Int?
     let showsNumber: Bool
     let size: BookCardBadgeSize
+    let fillOpacity: Double
     @Environment(\.nyaehAccentColor) private var accent
     @Environment(\.self) private var environment
     @State private var numberWidth: CGFloat = 0
 
     var animatableData: CGFloat
 
-    init(current: Int, total: Int?, showsNumber: Bool, size: BookCardBadgeSize) {
+    init(current: Int, total: Int?, showsNumber: Bool, size: BookCardBadgeSize, fillOpacity: Double = 1) {
         self.current = current
         self.total = total
         self.showsNumber = showsNumber
         self.size = size
+        self.fillOpacity = fillOpacity
         animatableData = total.map { min(1, max(0, CGFloat(current) / CGFloat(max(1, $0)))) } ?? 0
     }
 
@@ -785,9 +787,9 @@ struct CardPageProgress: View, Animatable {
                 let shape = RoundedRectangle(cornerRadius: BookCardMetrics.detailCornerRadius)
                 shape.fill(.secondary.opacity(0.16))
                 if total != nil {
-                    shape.fill(accent).frame(width: fill)
+                    shape.fill(accent.opacity(fillOpacity)).frame(width: fill)
                 } else {
-                    accent.mask { ProgressView().progressViewStyle(.linear) }
+                    accent.opacity(fillOpacity).mask { ProgressView().progressViewStyle(.linear) }
                         .padding(.leading, showsNumber ? numberWidth + 8 : 3)
                         .padding(.trailing, 3)
                 }
@@ -795,7 +797,7 @@ struct CardPageProgress: View, Animatable {
                     Text(BookCardMetrics.progressLabel(page: current)).font(size.font.monospacedDigit()).fixedSize()
                         .contentTransition(.opacity)
                         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { numberWidth = $0 }
-                        .foregroundStyle(position.onFill ? ink : .primary)
+                        .foregroundStyle(position.onFill && fillOpacity == 1 ? ink : .primary)
                         .offset(x: position.x)
                 }
             }.clipShape(RoundedRectangle(cornerRadius: BookCardMetrics.detailCornerRadius))
