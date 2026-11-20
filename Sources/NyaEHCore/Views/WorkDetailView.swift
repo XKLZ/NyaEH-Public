@@ -1,4 +1,4 @@
-// 本文件实现作品详情页，使用作品-角色索引、背景资产和分段延迟渲染来支撑大书库浏览。
+// 本文件实现作品详情页，呈现作品介绍、角色选择和当前角色的书架。
 
 import AppKit
 import SwiftUI
@@ -8,20 +8,18 @@ struct WorkDetailView: View {
     let tagID: Tag.DatabaseID
     let isTagTranslationEnabled: Bool
     let titleDisplayMode: BookTitleDisplayMode
-    let initialScrollOffset: CGFloat?
+    let browsing: WorkTopicBrowsingState
     let usesExternalTransitionShell: Bool
     let localizer: AppLocalizer
-    let onScrollOffsetChange: (CGFloat) -> Void
     let onSelectBook: (LibraryBook) -> Void
     let onSelectCharacter: (TagDisplaySummary) -> Void
     let onSearchWork: (TagDisplaySummary) -> Void
-    // 大作品页只解锁可见窗口附近的角色分区；其余分区保留等高占位，保证滚动和返回动画稳定。
-    @State private var sectionRenderBudget = WorkDetailSectionRenderBudget()
-    @State private var visibleSectionIndices: Set<Int> = []
-    @State private var visibleSectionRange: ClosedRange<Int>?
-    @State private var loggedContentReadyTagID: Tag.DatabaseID?
     @State private var hasRequestedDetailLoad = false
     @State private var isManagingClaims = false
+    @State var motion = WorkTopicMotionCoordinator()
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.bookCardFields) private var cardFields
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var detail: WorkDetail? {
         store.catalog.workDetail(tagID: tagID)
@@ -40,7 +38,7 @@ struct WorkDetailView: View {
         ZStack {
             switch renderPhase {
             case .loadingShell:
-                WorkDetailLoadingShell(localizer: localizer)
+                WorkDetailTransitionShell(detail: nil, browsing: browsing, fallbackTitle: localizer.string(.detailWorks), localizer: localizer)
                     .transition(renderPhaseTransition)
                     .onAppear {
                         NavigationPerformanceTracer.workDetailShellDidAppear(tagID: tagID)
@@ -79,15 +77,11 @@ struct WorkDetailView: View {
                 isTagTranslationEnabled: isTagTranslationEnabled
             )
         }
-        .onChange(of: tagID) { _, _ in
-            resetSectionRendering()
-        }
-        .onChange(of: isTagTranslationEnabled) { _, _ in
-            resetSectionRendering()
-        }
         .onDisappear {
+            motion.clear()
             NavigationPerformanceTracer.workDetailDidDisappear(tagID: tagID)
         }
+        .workTopicAssignmentFeedback(store: store, workID: tagID, localizer: localizer, onManage: { isManagingClaims = true })
         .sheet(isPresented: $isManagingClaims) {
             WorkCharacterManagementSheet(
                 store: store,
@@ -107,174 +101,111 @@ struct WorkDetailView: View {
     }
 
     private func detailContent(_ detail: WorkDetail) -> some View {
-        ZStack(alignment: .top) {
-                WorkDetailBackground(
-                    work: detail.work,
-                    fallbackHex: TagVisualAssetService.effectiveBackgroundHex(for: detail.work),
-                    paletteLoader: store.catalog.tagVisualBackgroundPalette(relativeBackgroundPath:)
+        let selection = WorkTopicSelection.resolved(browsing.selection, in: detail)
+        let section = selection.flatMap { value -> WorkCharacterBookSection? in
+            guard case let .character(id) = value else { return nil }
+            return detail.section(for: id)
+        }
+        let portrait = section.flatMap(portraitRequest)
+        return WorkTopicLayout(browsing: browsing) { presentation in
+            WorkDetailHero(
+                detail: detail, presentation: presentation, browsing: browsing,
+                assetURL: store.catalog.tagVisualAssetURL(relativePath:),
+                localizer: localizer, onImportTagImage: importDroppedTagImage,
+                onDropError: { store.catalog.loadError = $0 },
+                onSearchWork: { onSearchWork(detail.work) }
+            )
+        } selector: {
+            WorkTopicSelector(
+                characters: detail.characters,
+                selectedCharacterID: section?.character?.id,
+                unclassifiedCount: detail.unclassifiedBooks.count,
+                isShowingUnclassified: selection == .unclassified,
+                assetURL: store.catalog.tagVisualAssetURL(relativePath:),
+                localizer: localizer, position: browsing.selector, motion: motion,
+                onSelect: { id in
+                    if let next = detail.section(for: id) {
+                        show(next, request: portraitRequest(for: next), restore: false)
+                    }
+                },
+                onUnclassified: {
+                    motion.clear()
+                    browsing.selection = .unclassified
+                },
+                onManage: { isManagingClaims = true }
+            )
+        } content: {
+            switch selection {
+            case .character:
+                if let section {
+                    WorkCharacterShelf(
+                        section: section, shelfSection: motion.shelfID.flatMap(detail.section),
+                        shelfPosition: motion.shelfID.map(browsing.shelf),
+                        titleDisplayMode: titleDisplayMode, localizer: localizer,
+                        onImportTagImage: importDroppedTagImage, onDropError: { store.catalog.loadError = $0 },
+                        onSelectCharacter: onSelectCharacter, onSelectBook: onSelectBook,
+                        workID: tagID, motion: motion
+                    )
+                }
+            case .unclassified:
+                WorkTopicUnclassifiedView(
+                    books: detail.unclassifiedBooks, characters: detail.characters, workID: tagID, store: store,
+                    titleDisplayMode: titleDisplayMode, isTagTranslationEnabled: isTagTranslationEnabled,
+                    localizer: localizer, onSelectBook: onSelectBook
                 )
-
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        WorkDetailHero(
-                            detail: detail,
-                            assetURL: store.catalog.tagVisualAssetURL(relativePath:),
-                            blurAssetURL: store.catalog.tagVisualHeroBlurAssetURL(relativeBackgroundPath:),
-                            localizer: localizer,
-                            onImportTagImage: importDroppedTagImage,
-                            onDropError: { store.catalog.loadError = $0 },
-                            onSearchWork: { onSearchWork(detail.work) }
-                        )
-
-                        HStack {
-                            Spacer()
-                            Button {
-                                isManagingClaims = true
-                            } label: {
-                                Label(localizer.string(.workCharacterManage), systemImage: "person.crop.rectangle.stack")
-                            }
-                            .help(localizer.string(.workCharacterManage))
-                        }
-                        .padding(.horizontal, 34)
-
-                        if detail.sections.isEmpty {
-                            ContentUnavailableView(
-                                localizer.string(.workDetailNoBooks),
-                                systemImage: "books.vertical",
-                                description: Text(localizer.string(.workDetailNoBooksDescription))
-                            )
-                            .frame(maxWidth: .infinity, minHeight: 260)
-                            .padding(.horizontal, 34)
-                        } else {
-                            LazyVStack(alignment: .leading, spacing: 14) {
-                                ForEach(Array(detail.sections.enumerated()), id: \.element.id) { index, section in
-                                    if sectionContentWeight(index: index, totalCount: detail.sections.count) == .full {
-                                        WorkCharacterShelf(
-                                            section: section,
-                                            titleDisplayMode: titleDisplayMode,
-                                            localizer: localizer,
-                                            assetURL: store.catalog.tagVisualAssetURL(relativePath:),
-                                            onImportTagImage: importDroppedTagImage,
-                                            onDropError: { store.catalog.loadError = $0 },
-                                            onSelectCharacter: onSelectCharacter,
-                                            onSelectBook: onSelectBook
-                                        )
-                                        .onScrollVisibilityChange(threshold: 0.06) { isVisible in
-                                            updateSectionVisibility(
-                                                index: index,
-                                                isVisible: isVisible,
-                                                totalCount: detail.sections.count
-                                            )
-                                        }
-                                        .transition(.opacity.combined(with: .scale(scale: 0.985)))
-                                    } else {
-                                        WorkCharacterShelfPlaceholder(
-                                            usesDoubleRow: WorkCharacterShelfLayout.usesDoubleRow(bookCount: section.bookCount)
-                                        )
-                                        .onScrollVisibilityChange(threshold: 0.01) { isVisible in
-                                            updateSectionVisibility(
-                                                index: index,
-                                                isVisible: isVisible,
-                                                totalCount: detail.sections.count
-                                            )
-                                        }
-                                        .transition(.opacity)
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, 34)
-                        }
-                    }
-                    .padding(.bottom, 34)
-                    .frame(maxWidth: 1540, alignment: .topLeading)
-                    .frame(maxWidth: .infinity, alignment: .top)
-                    .background {
-                        WorkDetailScrollOffsetReader(
-                            tagID: tagID,
-                            initialOffset: initialScrollOffset
-                        )
-                        .frame(width: 0, height: 0)
-                    }
+                .modifier(WorkTopicReadableContent())
+            case nil:
+                ContentUnavailableView(
+                    localizer.string(.workDetailNoBooks), systemImage: "books.vertical",
+                    description: Text(localizer.string(.workDetailNoBooksDescription))
+                )
+                .frame(maxWidth: .infinity, minHeight: 260)
+                .modifier(WorkTopicReadableContent())
+            }
+        }
+        .workTopicFlightOverlay(motion) { character in
+            WorkTopicCharacterNameplate(character: character, bookCount: detail.section(for: character.id)?.bookCount ?? 0,
+                                       localizer: localizer, onSelectCharacter: onSelectCharacter)
+        }
+        .background {
+            WorkDetailBackground(work: detail.work,
+                                 fallbackHex: TagVisualAssetService.effectiveBackgroundHex(for: detail.work),
+                                 paletteLoader: store.catalog.tagVisualBackgroundPalette(relativeBackgroundPath:))
+        }
+        .onChange(of: PortraitSelection(stored: browsing.selection, resolved: selection, request: portrait), initial: true) { _, current in
+            if let section, let character = section.character {
+                // A committed click already has its image. In particular, leave a newer
+                // queued click alone when SwiftUI observes the earlier route selection.
+                if current.stored != nil && current.stored != current.resolved { motion.clear() }
+                if motion.active?.character.id != character.id || motion.active?.request != current.request {
+                    show(section, request: current.request, restore: current.stored != nil)
                 }
-                .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                    max(geometry.contentOffset.y, 0)
-                } action: { _, newOffset in
-                    onScrollOffsetChange(newOffset)
-                }
+            } else {
+                motion.clear()
+                browsing.selection = current.resolved
             }
-            .animation(.easeInOut(duration: 0.18), value: visibleSectionRange)
-            .onAppear {
-                logContentReadyIfNeeded(sectionCount: detail.sections.count)
-            }
-            .task(id: "\(tagID)-\(isTagTranslationEnabled)-\(detail.sections.count)") {
-                resetSectionRendering()
-                await Task.yield()
-                unlockInitialSections(totalCount: detail.sections.count)
-            }
+        }
+        .onAppear { NavigationPerformanceTracer.workDetailContentReady(tagID: tagID, sectionCount: detail.sections.count) }
     }
 
-    private func resetSectionRendering() {
-        sectionRenderBudget.reset()
-        visibleSectionIndices = []
-        visibleSectionRange = nil
-        loggedContentReadyTagID = nil
-        hasRequestedDetailLoad = false
+    private struct PortraitSelection: Equatable {
+        let stored: WorkTopicSelection?
+        let resolved: WorkTopicSelection?
+        let request: WorkTopicAvatarRequest?
     }
 
-    private func logContentReadyIfNeeded(sectionCount: Int) {
-        guard loggedContentReadyTagID != tagID else {
-            return
-        }
-        loggedContentReadyTagID = tagID
-        NavigationPerformanceTracer.workDetailContentReady(tagID: tagID, sectionCount: sectionCount)
+    private func portraitRequest(for section: WorkCharacterBookSection) -> WorkTopicAvatarRequest? {
+        guard let profile = section.character?.visualProfile, let path = profile.foregroundAssetPath,
+              let url = store.catalog.tagVisualAssetURL(relativePath: path) else { return nil }
+        let longEdge = max(WorkTopicStageLayout.maximumPortraitWidth, WorkTopicStageLayout.panelHeight(fields: cardFields))
+        return WorkTopicAvatarRequest(url: url, revision: profile.updatedAt, pixels: Int(ceil(longEdge * displayScale)))
     }
 
-    private func unlockInitialSections(totalCount: Int) {
-        let result = sectionRenderBudget.unlockInitial(totalCount: totalCount)
-        guard result.didUnlock else {
-            return
+    private func show(_ section: WorkCharacterBookSection, request: WorkTopicAvatarRequest?, restore: Bool) {
+        guard let character = section.character else { return }
+        motion.show(character, request: request, restore: restore, reduceMotion: reduceMotion) { [browsing] id in
+            browsing.selection = .character(id)
         }
-        NavigationPerformanceTracer.workDetailSectionUnlocked(
-            tagID: tagID,
-            triggerIndex: 0,
-            totalCount: totalCount,
-            unlockedCount: sectionRenderBudget.unlockedCount
-        )
-    }
-
-    private func sectionContentWeight(index: Int, totalCount: Int) -> WorkDetailSectionContentWeight {
-        WorkDetailSectionViewportPolicy.contentWeight(
-            for: index,
-            visibleRange: visibleSectionRange,
-            totalCount: totalCount
-        )
-    }
-
-    private func updateSectionVisibility(index: Int, isVisible: Bool, totalCount: Int) {
-        if isVisible {
-            visibleSectionIndices = visibleSectionIndices.filter { abs($0 - index) <= WorkDetailSectionViewportPolicy.maximumTrackedDistance }
-            visibleSectionIndices.insert(index)
-        } else {
-            visibleSectionIndices.remove(index)
-        }
-
-        let nextRange = WorkDetailSectionViewportPolicy.visibleRange(
-            afterVisibilityChange: visibleSectionIndices,
-            totalCount: totalCount
-        )
-        guard let nextRange else {
-            return
-        }
-        guard nextRange != visibleSectionRange else {
-            return
-        }
-        visibleSectionRange = nextRange
-        NavigationPerformanceTracer.workDetailSectionUnlocked(
-            tagID: tagID,
-            triggerIndex: index,
-            totalCount: totalCount,
-            unlockedCount: visibleSectionIndices.count
-        )
     }
 
     private func importDroppedTagImage(
@@ -651,6 +582,23 @@ enum WorkDetailRenderPhase: Equatable {
     }
 }
 
+private struct WorkTopicSearchLabel: Layout {
+    let fraction: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let icon = subviews[0].sizeThatFits(.unspecified)
+        let title = subviews[1].sizeThatFits(.unspecified)
+        return .init(width: icon.width + (7 + title.width) * fraction, height: max(icon.height, title.height))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let iconWidth = subviews[0].sizeThatFits(.unspecified).width
+        subviews[0].place(at: .init(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: .unspecified)
+        subviews[1].place(at: .init(x: bounds.minX + iconWidth + 7 * fraction, y: bounds.midY),
+                          anchor: .leading, proposal: .unspecified)
+    }
+}
+
 private extension TagDisplaySummary {
     var assetTarget: TagVisualAssetTarget {
         TagVisualAssetTarget(
@@ -728,40 +676,6 @@ enum WorkCharacterShelfLayout {
     }
 }
 
-private struct WorkDetailLoadingShell: View {
-    let localizer: AppLocalizer
-
-    var body: some View {
-        ZStack(alignment: .top) {
-            WorkDetailLoadingBackground()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    WorkDetailLoadingHeroSkeleton(localizer: localizer)
-
-                    LazyVStack(alignment: .leading, spacing: 14) {
-                        ForEach(0..<WorkDetailSectionRenderBudget.initialUnlockedCount, id: \.self) { index in
-                            WorkCharacterShelfPlaceholder(usesDoubleRow: index == 0)
-                        }
-                    }
-                    .padding(.horizontal, 34)
-                }
-                .padding(.bottom, 34)
-                .frame(maxWidth: 1540, alignment: .topLeading)
-                .frame(maxWidth: .infinity, alignment: .top)
-            }
-
-            ProgressView()
-                .controlSize(.small)
-                .padding(12)
-                .background(.regularMaterial, in: Capsule())
-                .padding(.top, 24)
-                .frame(maxWidth: .infinity, alignment: .top)
-        }
-        .redacted(reason: .placeholder)
-    }
-}
-
 private struct WorkDetailLoadingBackground: View {
     var body: some View {
         MeshGradient(
@@ -785,36 +699,6 @@ private struct WorkDetailLoadingBackground: View {
             ]
         )
         .ignoresSafeArea()
-    }
-}
-
-private struct WorkDetailLoadingHeroSkeleton: View {
-    let localizer: AppLocalizer
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            RoundedRectangle(cornerRadius: 18)
-                .fill(.secondary.opacity(0.16))
-                .frame(width: 330, height: 185)
-
-            Text(localizer.string(.detailWorks))
-                .font(.system(size: 54, weight: .bold))
-
-            HStack(spacing: 10) {
-                WorkDetailPill(text: localizer.workDetailCharacterCount(12), systemImage: "person.2")
-                WorkDetailPill(text: localizer.workDetailBookCount(48), systemImage: "books.vertical")
-            }
-
-            Text(localizer.string(.workDetailNoIntro))
-                .font(.title3.weight(.medium))
-                .lineLimit(4)
-                .frame(maxWidth: 720, alignment: .leading)
-        }
-        .frame(maxWidth: 920, alignment: .leading)
-        .padding(.horizontal, 58)
-        .padding(.top, 58)
-        .padding(.bottom, 54)
-        .frame(maxWidth: .infinity, minHeight: 520, alignment: .bottomLeading)
     }
 }
 
@@ -883,128 +767,171 @@ private struct CharacterDetailLoadingHeroSkeleton: View {
 
 struct WorkCharacterShelfPlaceholder: View {
     let usesDoubleRow: Bool
-    @Environment(\.bookCardFields) private var cardFields
+    @Environment(\.bookCardFields) private var fields
 
     var body: some View {
         let metrics = WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: usesDoubleRow)
-        let carouselHeight = WorkCharacterShelfMetrics.carouselHeight(
-            metrics: metrics, usesDoubleRow: usesDoubleRow, fields: cardFields
-        )
-        WorkCharacterShelfFrame(usesDoubleRow: usesDoubleRow, carouselHeight: carouselHeight) { _ in
-            VStack(alignment: .leading, spacing: 10) {
-                RoundedRectangle(cornerRadius: 28)
-                    .fill(.secondary.opacity(0.14))
-                    .frame(maxWidth: 260)
-                    .frame(height: usesDoubleRow ? 430 : 370)
-
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(.secondary.opacity(0.20))
-                    .frame(maxWidth: 210)
-                    .frame(height: 36)
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(.secondary.opacity(0.16))
-                    .frame(maxWidth: 96)
-                    .frame(height: 22)
-            }
+        let height = WorkCharacterShelfMetrics.carouselHeight(metrics: metrics, usesDoubleRow: usesDoubleRow, fields: fields)
+        WorkCharacterShelfFrame {
+            WorkTopicCharacterGlass(expansion: 1)
+                .overlay(alignment: .bottom) {
+                    Capsule().fill(.secondary.opacity(0.12)).frame(maxWidth: 116).frame(height: 32).padding(8)
+                }
         } carousel: { layout in
-            HStack(alignment: .top, spacing: usesDoubleRow ? 16 : 20) {
-                ForEach(0..<5, id: \.self) { _ in
-                    VStack(spacing: usesDoubleRow ? WorkCharacterShelfMetrics.doubleRowSpacing : 0) {
-                        TopicShelfCardPlaceholder(metrics: metrics, fields: cardFields)
-                        if usesDoubleRow {
-                            TopicShelfCardPlaceholder(metrics: metrics, fields: cardFields)
+            Color.clear.overlay(alignment: .topLeading) {
+                HStack(alignment: .top, spacing: usesDoubleRow ? 16 : 20) {
+                    ForEach(0..<6, id: \.self) { _ in
+                        VStack(spacing: WorkCharacterShelfMetrics.doubleRowSpacing) {
+                            TopicShelfCardPlaceholder(metrics: metrics, fields: fields)
+                            if usesDoubleRow { TopicShelfCardPlaceholder(metrics: metrics, fields: fields) }
                         }
                     }
                 }
+                .padding(.top, WorkCharacterShelfMetrics.verticalCardPadding / 2)
+                .padding(.leading, layout.firstCoverX)
             }
-            .padding(.vertical, WorkCharacterShelfMetrics.verticalCardPadding / 2)
-            .padding(.horizontal, 18)
-            .frame(width: layout.contentColumnWidth, height: carouselHeight, alignment: .leading)
+            .frame(height: height)
             .clipped()
         }
-        .redacted(reason: .placeholder)
+        .accessibilityHidden(true)
     }
 }
 
 private struct WorkDetailHero: View {
     let detail: WorkDetail
+    let presentation: WorkTopicHeaderMetrics
+    let browsing: WorkTopicBrowsingState
     let assetURL: (String) -> URL?
-    let blurAssetURL: (String) async -> URL?
     let localizer: AppLocalizer
     let onImportTagImage: (TagVisualDropImportKind, Data, TagVisualAssetTarget) -> Void
     let onDropError: (String) -> Void
     let onSearchWork: () -> Void
 
+    @State private var foreground: NSImage?
+
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            WorkHeroBackground(
-                work: detail.work,
-                assetURL: assetURL,
-                blurAssetURL: blurAssetURL
-            )
-
-            VStack(alignment: .leading, spacing: 20) {
-                WorkVisualImage(
-                    tag: detail.work,
-                    kind: .foreground,
-                    assetURL: assetURL,
-                    fallbackSystemImage: "rectangle.stack.fill"
-                )
-                .frame(width: 330, height: 185)
-                .shadow(color: .black.opacity(0.22), radius: 22, x: 0, y: 12)
-
-                Text(detail.work.displayText)
-                    .font(.system(size: 54, weight: .bold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                HStack(spacing: 10) {
-                    WorkDetailPill(text: localizer.workDetailCharacterCount(detail.characterCount), systemImage: "person.2")
-                    WorkDetailPill(text: localizer.workDetailBookCount(detail.totalBookCount), systemImage: "books.vertical")
-                    if detail.work.displayText != detail.work.name {
-                        WorkDetailPill(text: detail.work.name, systemImage: "tag")
-                    }
-                }
-
+        ZStack {
+            WorkHeroBackground(work: detail.work, assetURL: assetURL)
+                .opacity(presentation.artworkOpacity)
+            WorkTopicHeroControls(presentation: presentation) {
+                identity
+                WorkTopicHeroCounts(characterCount: detail.characterCount, bookCount: detail.totalBookCount, localizer: localizer)
                 Text(introText)
                     .font(.title3.weight(.medium))
-                    .foregroundStyle(.primary.opacity(0.74))
-                    .lineSpacing(5)
-                    .lineLimit(5)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: 820, alignment: .leading)
-
-                Button(action: onSearchWork) {
-                    Label(localizer.string(.workDetailSearchWork), systemImage: "magnifyingglass")
-                        .frame(minWidth: 148)
-                }
-                .controlSize(.large)
-                .buttonStyle(.borderedProminent)
+                    .foregroundStyle(.primary.opacity(0.88))
+                    .lineSpacing(3)
+                    .lineLimit(4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .clipped()
+                    .opacity(presentation.introductionOpacity)
+                    .accessibilityHidden(presentation.introductionOpacity == 0)
+                    .help(introText)
+                search
             }
-            .frame(maxWidth: 920, alignment: .leading)
-            .padding(.horizontal, 58)
-            .padding(.top, 58)
-            .padding(.bottom, 54)
-            .contentShape(Rectangle())
-            .zIndex(2)
         }
-        .frame(maxWidth: .infinity, minHeight: 520, alignment: .bottomLeading)
-        .workDetailGlassSurface(.hero)
         .overlay {
-            WorkHeroDropCaptureOverlay(
-                detail: detail,
-                localizer: localizer,
-                onImportTagImage: onImportTagImage,
-                onDropError: onDropError
-            )
+            WorkHeroDropCaptureOverlay(detail: detail, localizer: localizer,
+                                       onImportTagImage: onImportTagImage, onDropError: onDropError)
         }
-        .padding(.horizontal, 34)
+        .task(id: detail.work.foregroundIdentity) {
+            foreground = nil
+            guard let path = detail.work.visualProfile?.foregroundAssetPath, let url = assetURL(path) else { return }
+            let image = await TagVisualImageCache.shared.image(for: url)
+            guard !Task.isCancelled else { return }
+            foreground = image
+        }
+    }
+
+    @ViewBuilder
+    private var identity: some View {
+        if let foreground {
+            Button { browsing.prefersTitle.toggle() } label: {
+                GeometryReader { proxy in
+                    if browsing.prefersTitle {
+                        title
+                    } else {
+                        Image(nsImage: foreground)
+                            .resizable().scaledToFit()
+                            .scaleEffect(detail.work.visualProfile?.foregroundScale ?? 1)
+                            .offset(x: (detail.work.visualProfile?.foregroundOffsetX ?? 0) * proxy.size.width,
+                                    y: (detail.work.visualProfile?.foregroundOffsetY ?? 0) * proxy.size.height)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    }
+                }
+                .clipped()
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(detail.work.displayText)
+            .help(localizer.string(.workTopicSwitchTitle))
+            .accessibilityHint(localizer.string(.workTopicSwitchTitle))
+        } else {
+            title
+        }
+    }
+
+    private var title: some View {
+        Text(detail.work.displayText)
+            .font(.system(size: presentation.interpolate(48, 18), weight: .bold))
+            .lineLimit(2)
+            .minimumScaleFactor(0.75)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .clipped()
+    }
+
+    private var search: some View {
+        Button(action: onSearchWork) {
+            WorkTopicSearchLabel(fraction: presentation.searchLabelSpace) {
+                Image(systemName: "magnifyingglass")
+                Text(localizer.string(.workDetailSearchWork))
+                    .fixedSize()
+                    .opacity(presentation.searchLabelOpacity)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .font(.headline)
+        .background(.regularMaterial, in: .capsule)
+        .help(localizer.string(.workDetailSearchWork))
+        .accessibilityLabel(localizer.string(.workDetailSearchWork))
     }
 
     private var introText: String {
         let trimmed = detail.work.translationIntro?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? localizer.string(.workDetailNoIntro) : trimmed
+    }
+}
+
+struct WorkTopicHeroCounts: View {
+    let characterCount: Int
+    let bookCount: Int
+    let localizer: AppLocalizer
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                WorkDetailPill(text: localizer.workDetailCharacterCount(characterCount), systemImage: "person.2", emphasized: true)
+                WorkDetailPill(text: localizer.workDetailBookCount(bookCount), systemImage: "books.vertical", emphasized: true)
+            }
+            HStack(spacing: 8) {
+                Label(characterCount.formatted(), systemImage: "person.2")
+                Label(bookCount.formatted(), systemImage: "books.vertical")
+            }
+            .font(.caption.weight(.semibold))
+        }
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(localizer.workDetailCharacterCount(characterCount) + ", " + localizer.workDetailBookCount(bookCount))
+    }
+}
+
+private extension TagDisplaySummary {
+    var foregroundIdentity: String {
+        "\(id)-\(visualProfile?.foregroundAssetPath ?? "")-\(visualProfile?.updatedAt ?? 0)"
     }
 }
 
@@ -1229,7 +1156,6 @@ private struct WorkHeroDropCaptureOverlay: View {
 
     @State private var targetedKind: TagVisualDropImportKind?
     @State private var pendingDrop: WorkHeroPendingVisualDrop?
-    @State private var loggedAttachedSize: CGSize = .zero
     @Environment(\.tagVisualDropTargetsEnabled) private var areTagVisualDropTargetsEnabled
 
     var body: some View {
@@ -1261,10 +1187,9 @@ private struct WorkHeroDropCaptureOverlay: View {
                 }
             }
             .onAppear {
-                logAttachedIfNeeded(size)
-            }
-            .onChange(of: size) { _, newSize in
-                logAttachedIfNeeded(newSize)
+                if areTagVisualDropTargetsEnabled {
+                    TagVisualDropDiagnostics.log("hero overlay attached width=\(Int(size.width)) height=\(Int(size.height))")
+                }
             }
         }
         .animation(.snappy(duration: 0.16), value: targetedKind)
@@ -1331,15 +1256,7 @@ private struct WorkHeroDropCaptureOverlay: View {
         }
     }
 
-    private func logAttachedIfNeeded(_ size: CGSize) {
-        guard areTagVisualDropTargetsEnabled, size != loggedAttachedSize else {
-            return
-        }
-        loggedAttachedSize = size
-        TagVisualDropDiagnostics.log(
-            "hero overlay attached width=\(Int(size.width)) height=\(Int(size.height))"
-        )
-    }
+
 }
 
 private struct WorkHeroPendingVisualDrop {
@@ -1446,343 +1363,173 @@ private struct WorkHeroDropCaptureBridge: NSViewRepresentable {
 
 private struct WorkCharacterShelf: View {
     let section: WorkCharacterBookSection
+    let shelfSection: WorkCharacterBookSection?
+    let shelfPosition: WorkTopicScrollMemory?
     let titleDisplayMode: BookTitleDisplayMode
     let localizer: AppLocalizer
-    let assetURL: (String) -> URL?
     let onImportTagImage: (TagVisualDropImportKind, Data, TagVisualAssetTarget) -> Void
     let onDropError: (String) -> Void
     let onSelectCharacter: (TagDisplaySummary) -> Void
     let onSelectBook: (LibraryBook) -> Void
+    let workID: Tag.DatabaseID
+    let motion: WorkTopicMotionCoordinator
+    @Environment(\.bookCardFields) private var fields
 
-    @State private var anchorIndex = 0
-    @State private var isHoveringCarousel = false
-    @State private var isHoveringCharacter = false
-    @State private var characterImageAvailability = WorkCharacterImageAvailability.pending
-
-    private let scrollStep = 3
-
-    private var usesDoubleRow: Bool {
-        WorkCharacterShelfLayout.usesDoubleRow(bookCount: section.bookCount)
-    }
-
-    @Environment(\.bookCardFields) private var cardFields
-
-    private var metrics: BookCardMetrics {
-        WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: usesDoubleRow)
-    }
-
-    private var columnCount: Int {
-        WorkCharacterShelfLayout.columnCount(bookCount: section.books.count, usesDoubleRow: usesDoubleRow)
-    }
-
-    private var columnIDs: [LibraryBook.ID] {
-        (0..<columnCount).map { columnID(at: $0) }
-    }
-
-    private var visibleThreshold: Int {
-        usesDoubleRow ? 6 : 5
-    }
-
-    private var carouselHeight: CGFloat {
-        WorkCharacterShelfMetrics.carouselHeight(metrics: metrics, usesDoubleRow: usesDoubleRow, fields: cardFields)
-    }
-
-    private var maxForwardIndex: Int {
-        max(columnCount - visibleThreshold, 0)
-    }
-
-    private var showsBackwardArrow: Bool {
-        isHoveringCarousel && anchorIndex > 0
-    }
-
-    private var showsForwardArrow: Bool {
-        isHoveringCarousel && columnCount > visibleThreshold && anchorIndex < maxForwardIndex
+    private func height(doubleRow: Bool) -> CGFloat {
+        WorkCharacterShelfMetrics.carouselHeight(metrics: WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: doubleRow),
+                                                usesDoubleRow: doubleRow, fields: fields)
     }
 
     var body: some View {
-        WorkCharacterShelfFrame(usesDoubleRow: usesDoubleRow, carouselHeight: carouselHeight) { layout in
-            characterPanel(
-                regionWidth: layout.characterColumnWidth,
-                shelfHeight: layout.containerSize.height,
-                capsuleInsets: layout.capsuleInsets
-            )
-        } carousel: { layout in
-            carouselLayer(contentWidth: layout.contentColumnWidth, fadeWidth: layout.viewportFadeWidth)
-        }
-    }
-
-    private func carouselLayer(contentWidth: CGFloat, fadeWidth: CGFloat) -> some View {
-        ScrollViewReader { proxy in
-            let maskMetrics = WorkCharacterShelfViewportMaskMetrics.resolve(
-                size: CGSize(width: contentWidth, height: carouselHeight),
-                preferredFadeWidth: fadeWidth
-            )
-
-            ZStack {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: usesDoubleRow ? 16 : 20) {
-                        ForEach(0..<columnCount, id: \.self) { columnIndex in
-                            let bookRange = WorkCharacterShelfLayout.bookRange(
-                                forColumn: columnIndex,
-                                bookCount: section.books.count,
-                                usesDoubleRow: usesDoubleRow
-                            )
-                            VStack(spacing: usesDoubleRow ? WorkCharacterShelfMetrics.doubleRowSpacing : 0) {
-                                ForEach(Array(section.books[bookRange])) { book in
-                                    BookCardButton(
-                                        book: book,
-                                        titleDisplayMode: titleDisplayMode,
-                                        localizer: localizer,
-                                        metrics: metrics,
-                                        action: onSelectBook
-                                    )
-                                    .overlay(alignment: .topLeading) {
-                                        if let bookID = book.databaseID,
-                                           let claim = section.claimsByBookID[bookID],
-                                           claim.source == .automatic {
-                                            WorkCharacterClaimBadge(claim: claim, localizer: localizer)
-                                                .padding(5)
-                                        }
-                                    }
-                                    .workCharacterClaimHint(book.databaseID.flatMap { section.claimsByBookID[$0] }, localizer: localizer)
-                                }
-                                if usesDoubleRow && bookRange.count == 1 {
-                                    Spacer(minLength: 0)
-                                }
-                            }
-                            .id(columnID(at: columnIndex))
-                        }
-                    }
-                    .padding(.vertical, WorkCharacterShelfMetrics.verticalCardPadding / 2)
-                    .padding(.leading, 18)
-                    .padding(.trailing, 18)
-                }
-                .scrollIndicators(.hidden, axes: .horizontal)
-                .mask {
-                    WorkCharacterShelfViewportMask(metrics: maskMetrics)
-                }
-                .clipped()
-
-                HStack {
-                    if showsBackwardArrow {
-                        WorkDetailCarouselArrowButton(
-                            systemImage: "chevron.left",
-                            help: localizer.string(.previousPage)
-                        ) {
-                            scroll(by: -scrollStep, proxy: proxy)
-                        }
-                        .transition(.opacity.combined(with: .scale(scale: 0.92)))
-                    }
-
-                    Spacer()
-
-                    if showsForwardArrow {
-                        WorkDetailCarouselArrowButton(
-                            systemImage: "chevron.right",
-                            help: localizer.string(.nextPage)
-                        ) {
-                            scroll(by: scrollStep, proxy: proxy)
-                        }
-                        .transition(.opacity.combined(with: .scale(scale: 0.92)))
-                    }
-                }
-                .padding(.leading, 20)
-                .padding(.trailing, 6)
-                .animation(.easeInOut(duration: 0.16), value: showsBackwardArrow)
-                .animation(.easeInOut(duration: 0.16), value: showsForwardArrow)
-            }
-            .frame(width: contentWidth, height: carouselHeight, alignment: .center)
-            .contentShape(Rectangle())
-            .onHover { isHoveringCarousel = $0 }
-            .onChange(of: columnIDs) { _, _ in
-                clampAnchorIndex()
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func characterPanel(regionWidth: CGFloat, shelfHeight: CGFloat, capsuleInsets: EdgeInsets) -> some View {
-        let visualState = WorkCharacterShelfVisualState.resolve(
-            hasForegroundAsset: characterImageAvailability.hasImageLikeAsset(
-                configured: hasConfiguredCharacterForeground
-            )
-        )
-        let imageMaxWidth = max(regionWidth - 28, 0)
-        let imageMaxHeight = max(shelfHeight - 18, 0)
-        let infoCardWidth = max(regionWidth - capsuleInsets.leading - capsuleInsets.trailing, 0)
-
-        Group {
+        WorkCharacterShelfFrame {
             if let character = section.character {
-                Button {
-                    onSelectCharacter(character)
-                } label: {
-                    characterPanelContent(
-                        visualState: visualState,
-                        imageMaxWidth: imageMaxWidth,
-                        imageMaxHeight: imageMaxHeight,
-                        infoCardWidth: infoCardWidth,
-                        shelfHeight: shelfHeight,
-                        regionWidth: regionWidth,
-                        insets: capsuleInsets
-                    )
-                }
-                .buttonStyle(.plain)
-                .onHover { isHoveringCharacter = $0 }
-                .help(localizer.string(.workDetailOpenCharacter))
-                .accessibilityLabel("\(localizer.string(.workDetailOpenCharacter)): \(character.displayText), \(localizer.workDetailBookCount(section.bookCount))")
-            } else {
-                characterPanelContent(
-                    visualState: visualState,
-                    imageMaxWidth: imageMaxWidth,
-                    imageMaxHeight: imageMaxHeight,
-                    infoCardWidth: infoCardWidth,
-                    shelfHeight: shelfHeight,
-                    regionWidth: regionWidth,
-                    insets: capsuleInsets
+                dropTarget(
+                    WorkTopicCharacterCard(character: character, image: motion.image(for: character.id), expansion: 1) {
+                        WorkTopicCharacterNameplate(character: character, bookCount: section.bookCount, localizer: localizer,
+                                                    onSelectCharacter: onSelectCharacter)
+                    }
                 )
+                .workTopicPortraitStage(characterID: character.id, motion: motion)
+            }
+        } carousel: { layout in
+            if let shelfSection, let character = shelfSection.character, let shelfPosition {
+                let doubleRow = WorkCharacterShelfLayout.usesDoubleRow(bookCount: shelfSection.bookCount)
+                WorkTopicBookCarousel(section: shelfSection, doubleRow: doubleRow, height: height(doubleRow: doubleRow),
+                                      layout: layout, position: shelfPosition, titleDisplayMode: titleDisplayMode,
+                                      localizer: localizer, onSelectBook: onSelectBook, motion: motion)
+                    .onAppear {
+                        motion.shelfDidAppear(character.id)
+                        NavigationPerformanceTracer.workTopicShelfVisibility(workID: workID, characterID: character.id, visible: true)
+                    }
+                    .onDisappear {
+                        motion.shelfDidDisappear(character.id)
+                        NavigationPerformanceTracer.workTopicShelfVisibility(workID: workID, characterID: character.id, visible: false)
+                    }
+                    .id(character.id)
+                    .transition(.identity)
             }
         }
-        .tagVisualImageDropTarget(
-            kind: .foreground,
-            localizer: localizer,
-            isEnabled: section.character != nil,
+    }
+
+    private func dropTarget<V: View>(_ view: V) -> some View {
+        view.tagVisualImageDropTarget(
+            kind: .foreground, localizer: localizer, isEnabled: section.character != nil,
             cornerRadius: WorkDetailSurfaceRole.shelf.cornerRadius,
             hasExistingAsset: { section.character?.visualProfile?.foregroundAssetPath != nil },
-            onImport: { imageData in
-                guard let character = section.character else {
+            onImport: { data in
+                if let tag = section.character { onImportTagImage(.foreground, data, tag.assetTarget) }
+            }, onError: onDropError
+        )
+    }
+}
+
+private struct WorkTopicBookCarousel: View {
+    let section: WorkCharacterBookSection
+    let doubleRow: Bool
+    let height: CGFloat
+    let layout: WorkTopicStageLayout
+    let position: WorkTopicScrollMemory
+    let titleDisplayMode: BookTitleDisplayMode
+    let localizer: AppLocalizer
+    let onSelectBook: (LibraryBook) -> Void
+    let motion: WorkTopicMotionCoordinator
+
+    @State private var scroll = ScrollPosition(edge: .leading)
+    @State private var needsRestore = true
+    @State private var edges = (back: false, forward: false)
+    @State private var appeared = false
+    @State private var entranceFinished = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var metrics: BookCardMetrics { WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: doubleRow) }
+
+    var body: some View {
+        let entering = motion.animateShelfEntrance && !appeared
+        let exiting = motion.shelfIsExiting
+        ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: doubleRow ? 16 : 20) {
+                ForEach(0..<WorkCharacterShelfLayout.columnCount(bookCount: section.bookCount, usesDoubleRow: doubleRow), id: \.self) { column in
+                    let range = WorkCharacterShelfLayout.bookRange(forColumn: column, bookCount: section.bookCount, usesDoubleRow: doubleRow)
+                    VStack(spacing: WorkCharacterShelfMetrics.doubleRowSpacing) {
+                        ForEach(section.books[range]) { book in
+                            BookCardButton(book: book, titleDisplayMode: titleDisplayMode, localizer: localizer,
+                                           metrics: metrics, action: onSelectBook)
+                                .overlay(alignment: .topLeading) {
+                                    if let id = book.databaseID, let claim = section.claimsByBookID[id], claim.source == .automatic {
+                                        WorkCharacterClaimBadge(claim: claim, localizer: localizer).padding(5)
+                                    }
+                                }
+                                .workCharacterClaimHint(book.databaseID.flatMap { section.claimsByBookID[$0] }, localizer: localizer)
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, WorkCharacterShelfMetrics.verticalCardPadding / 2)
+            .padding(.leading, layout.firstCoverX)
+            .padding(.trailing, layout.trailingInset + WorkTopicStageLayout.cardInset)
+            .frame(minHeight: height, alignment: .topLeading)
+        }
+        .scrollPosition($scroll)
+        .scrollIndicators(.hidden)
+        .onScrollGeometryChange(for: ShelfScrollGeometry.self) { ShelfScrollGeometry(geometry: $0) } action: { _, value in
+            if needsRestore, value.maxOffsetX > 0 {
+                needsRestore = false
+                let target = min(position.offset, value.maxOffsetX)
+                if abs(target - value.offsetX) > 1 {
+                    scroll.scrollTo(x: target)
                     return
                 }
-                onImportTagImage(.foreground, imageData, character.assetTarget)
-            },
-            onError: onDropError
-        )
-        .onChange(of: section.id) { _, _ in
-            characterImageAvailability = .pending
-            isHoveringCharacter = false
-        }
-    }
-
-    private func characterPanelContent(
-        visualState: WorkCharacterShelfVisualState,
-        imageMaxWidth: CGFloat,
-        imageMaxHeight: CGFloat,
-        infoCardWidth: CGFloat,
-        shelfHeight: CGFloat,
-        regionWidth: CGFloat,
-        insets: EdgeInsets
-    ) -> some View {
-        ZStack(alignment: .bottomLeading) {
-            if visualState.showsPlaceholder {
-                characterPlaceholder
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, 96)
             }
-
-            WorkCharacterImage(
-                tag: section.character,
-                assetURL: assetURL,
-                onImageAvailabilityChange: { isAvailable in
-                    characterImageAvailability = isAvailable ? .available : .missing
-                }
-            )
-            .frame(maxWidth: imageMaxWidth, maxHeight: imageMaxHeight)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .shadow(
-                color: .black.opacity(visualState.characterShadowOpacity),
-                radius: visualState.characterShadowRadius,
-                x: 0,
-                y: visualState.characterShadowYOffset
-            )
-
-            characterInfoCard(width: infoCardWidth)
-                .padding(insets)
+            if !needsRestore { position.offset = value.offsetX }
+            let next = (value.canScrollBackward, value.canScrollForward)
+            if edges != next { edges = next }
         }
-        .frame(width: regionWidth, height: shelfHeight, alignment: .bottomLeading)
-        .contentShape(Rectangle())
-    }
-
-    private func characterInfoCard(width: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(section.character?.displayText ?? localizer.string(.workDetailUntaggedCharacter))
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-
-            HStack(spacing: 4) {
-                Text(localizer.workDetailBookCount(section.bookCount))
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-
-                Spacer(minLength: 0)
-
-                if section.character != nil {
-                    Image(systemName: "arrow.up.right")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 20, height: 20)
-                        .offset(x: isHoveringCharacter ? 2 : 0, y: isHoveringCharacter ? -2 : 0)
-                        .accessibilityHidden(true)
-                }
+        .mask { WorkTopicShelfEdge(panelRight: layout.panelRight) }
+        .overlay(alignment: .leading) {
+            if edges.back {
+                arrow(forward: false, viewport: layout.usableShelfWidth)
+                    .padding(.leading, layout.panelRight)
             }
         }
-        .padding(.horizontal, width < 180 ? 9 : 16)
-        .padding(.vertical, 12)
-        .frame(width: width, alignment: .leading)
-        .workDetailCharacterGlassRegion()
-        .scaleEffect(isHoveringCharacter ? 1.015 : 1, anchor: .bottomLeading)
-        .animation(.easeOut(duration: 0.16), value: isHoveringCharacter)
-    }
-
-    private var hasConfiguredCharacterForeground: Bool {
-        section.character?.visualProfile?.foregroundAssetPath != nil
-    }
-
-    private var characterPlaceholder: some View {
-        VStack(alignment: .center, spacing: 12) {
-            Image(systemName: "person.crop.square")
-                .font(.system(size: 44, weight: .medium))
-                .foregroundStyle(.secondary.opacity(0.42))
-                .frame(width: 86, height: 86)
-                .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 18))
-
-            RoundedRectangle(cornerRadius: 999)
-                .fill(.secondary.opacity(0.12))
-                .frame(width: 180, height: 5)
+        .overlay(alignment: .trailing) {
+            if edges.forward {
+                arrow(forward: true, viewport: layout.usableShelfWidth)
+                    .padding(.trailing, layout.trailingInset)
+            }
         }
-        .frame(maxWidth: .infinity)
-        .allowsHitTesting(false)
-    }
-
-    private func scroll(by offset: Int, proxy: ScrollViewProxy) {
-        let upperBound = offset > 0 ? maxForwardIndex : max(columnCount - 1, 0)
-        let newIndex = min(max(anchorIndex + offset, 0), upperBound)
-        guard (0..<columnCount).contains(newIndex) else {
-            return
-        }
-
-        anchorIndex = newIndex
-        withAnimation(.snappy(duration: 0.32)) {
-            proxy.scrollTo(columnID(at: newIndex), anchor: .leading)
+        .frame(height: height)
+        .scaleEffect(exiting && !reduceMotion ? 0.94 : 1)
+        .opacity(exiting || (entering && reduceMotion) ? 0 : 1)
+        .animation(.easeInOut(duration: motion.shelfExitDuration), value: exiting)
+        .offset(x: entering && !reduceMotion ? layout.width : 0)
+        .allowsHitTesting(entranceFinished && !exiting)
+        .accessibilityHidden(!entranceFinished || exiting)
+        .task {
+            if motion.animateShelfEntrance {
+                // Keep the initial, off-window position through one layout pass.
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                withAnimation(reduceMotion ? .easeOut(duration: 0.12) : .easeOut(duration: 0.30)) {
+                    appeared = true
+                } completion: {
+                    entranceFinished = true
+                }
+            } else {
+                appeared = true
+                entranceFinished = true
+            }
         }
     }
 
-    private func clampAnchorIndex() {
-        anchorIndex = min(max(anchorIndex, 0), maxForwardIndex)
+    private func arrow(forward: Bool, viewport: CGFloat) -> some View {
+        WorkDetailCarouselArrowButton(systemImage: forward ? "chevron.right" : "chevron.left",
+                                     help: localizer.string(forward ? .nextPage : .previousPage)) {
+            let distance = max(metrics.cardWidth, viewport - metrics.cardWidth * 0.25)
+            withAnimation(.snappy(duration: 0.28)) {
+                scroll.scrollTo(x: max(position.offset + (forward ? distance : -distance), 0))
+            }
+        }
     }
-
-    private func columnID(at columnIndex: Int) -> LibraryBook.ID {
-        let range = WorkCharacterShelfLayout.bookRange(
-            forColumn: columnIndex,
-            bookCount: section.books.count,
-            usesDoubleRow: usesDoubleRow
-        )
-        return section.books[range.lowerBound].id
-    }
-
 }
 
 private struct CharacterWorkShelf: View {
@@ -2067,42 +1814,9 @@ private struct TopicShelfCardPlaceholder: View {
     }
 }
 
-private struct WorkCharacterShelfFrame<CharacterPanel: View, Carousel: View>: View {
-    let usesDoubleRow: Bool
-    let carouselHeight: CGFloat
-    @ViewBuilder let characterPanel: (WorkCharacterShelfSplitMetrics) -> CharacterPanel
-    @ViewBuilder let carousel: (WorkCharacterShelfSplitMetrics) -> Carousel
-
-    var body: some View {
-        GeometryReader { proxy in
-            let layout = WorkCharacterShelfSplitMetrics.resolve(containerSize: proxy.size)
-            HStack(spacing: 0) {
-                characterPanel(layout)
-                    .frame(width: layout.characterColumnWidth, height: proxy.size.height, alignment: .bottom)
-                carousel(layout)
-                    .frame(width: layout.contentColumnWidth, height: proxy.size.height, alignment: .bottomLeading)
-            }
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: WorkDetailSurfaceRole.shelf.cornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: WorkDetailSurfaceRole.shelf.cornerRadius, style: .continuous)
-                    .stroke(.white.opacity(0.12), lineWidth: 1)
-                    .allowsHitTesting(false)
-            }
-            .shadow(color: .black.opacity(0.035), radius: 12, x: 0, y: 5)
-        }
-        .frame(height: WorkCharacterShelfMetrics.shelfHeight(usesDoubleRow: usesDoubleRow, carouselHeight: carouselHeight))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 14)
-    }
-}
-
 enum WorkCharacterShelfMetrics {
     static func cardMetrics(usesDoubleRow: Bool) -> BookCardMetrics {
         BookCardMetrics(width: usesDoubleRow ? 136 : 168)
-    }
-
-    static func shelfHeight(usesDoubleRow: Bool, carouselHeight: CGFloat) -> CGFloat {
-        max(usesDoubleRow ? 590 : 520, carouselHeight)
     }
 
     static let verticalCardPadding: CGFloat = 20
@@ -2113,60 +1827,6 @@ enum WorkCharacterShelfMetrics {
             return metrics.cardHeight(for: fields) * 2 + doubleRowSpacing + verticalCardPadding
         }
         return metrics.cardHeight(for: fields) + verticalCardPadding
-    }
-}
-
-enum WorkCharacterShelfSplitLayout {
-    static let minCharacterColumnWidth: CGFloat = 300
-    static let maxCharacterColumnWidth: CGFloat = 420
-    static let characterColumnRatio: CGFloat = 0.30
-    static let minimumContentWidth: CGFloat = 300
-    static let capsuleHorizontalInset: CGFloat = 18
-    static let capsuleBottomInset: CGFloat = 16
-
-    static func keepsContentOutsideCharacterColumn(
-        characterColumnWidth: CGFloat,
-        contentColumnWidth: CGFloat,
-        containerWidth: CGFloat
-    ) -> Bool {
-        characterColumnWidth >= minCharacterColumnWidth
-            && contentColumnWidth >= minimumContentWidth
-            && characterColumnWidth + contentColumnWidth <= containerWidth + 0.5
-    }
-}
-
-struct WorkCharacterShelfSplitMetrics: Equatable {
-    var containerSize: CGSize
-    var characterColumnWidth: CGFloat
-    var contentColumnWidth: CGFloat
-    var capsuleInsets: EdgeInsets
-    var viewportFadeWidth: CGFloat
-
-    static func resolve(containerSize: CGSize) -> WorkCharacterShelfSplitMetrics {
-        let width = max(containerSize.width, 0)
-        let height = max(containerSize.height, 0)
-        let proposedCharacterWidth = width * WorkCharacterShelfSplitLayout.characterColumnRatio
-        let cappedCharacterWidth = min(
-            max(proposedCharacterWidth, WorkCharacterShelfSplitLayout.minCharacterColumnWidth),
-            WorkCharacterShelfSplitLayout.maxCharacterColumnWidth
-        )
-        let maxCharacterWidthForContent = max(width - WorkCharacterShelfSplitLayout.minimumContentWidth, 0)
-        let characterColumnWidth = min(cappedCharacterWidth, maxCharacterWidthForContent)
-        let contentColumnWidth = max(width - characterColumnWidth, 0)
-        let viewportFadeWidth = width > 0 ? min(max(width * 0.022, 18), 32) : 0
-
-        return WorkCharacterShelfSplitMetrics(
-            containerSize: CGSize(width: width, height: height),
-            characterColumnWidth: characterColumnWidth,
-            contentColumnWidth: contentColumnWidth,
-            capsuleInsets: EdgeInsets(
-                top: 0,
-                leading: WorkCharacterShelfSplitLayout.capsuleHorizontalInset,
-                bottom: WorkCharacterShelfSplitLayout.capsuleBottomInset,
-                trailing: WorkCharacterShelfSplitLayout.capsuleHorizontalInset
-            ),
-            viewportFadeWidth: viewportFadeWidth
-        )
     }
 }
 
@@ -2208,22 +1868,6 @@ enum WorkCharacterImageAvailability: Equatable {
     }
 }
 
-struct WorkCharacterShelfVisualState: Equatable {
-    var showsPlaceholder: Bool
-    var characterShadowOpacity: Double
-    var characterShadowRadius: CGFloat
-    var characterShadowYOffset: CGFloat
-
-    static func resolve(hasForegroundAsset: Bool) -> WorkCharacterShelfVisualState {
-        WorkCharacterShelfVisualState(
-            showsPlaceholder: !hasForegroundAsset,
-            characterShadowOpacity: hasForegroundAsset ? 0.18 : 0,
-            characterShadowRadius: hasForegroundAsset ? 20 : 0,
-            characterShadowYOffset: hasForegroundAsset ? 12 : 0
-        )
-    }
-}
-
 enum WorkDetailSurfaceRole: Equatable {
     case hero
     case shelf
@@ -2237,50 +1881,6 @@ enum WorkDetailSurfaceRole: Equatable {
         }
     }
 
-    var strokeOpacity: Double {
-        switch self {
-        case .hero:
-            0.18
-        case .shelf:
-            0.17
-        }
-    }
-
-    var shadowOpacity: Double {
-        switch self {
-        case .hero:
-            0.055
-        case .shelf:
-            0.042
-        }
-    }
-
-    var shadowRadius: CGFloat {
-        switch self {
-        case .hero:
-            18
-        case .shelf:
-            16
-        }
-    }
-
-    var shadowYOffset: CGFloat {
-        switch self {
-        case .hero:
-            8
-        case .shelf:
-            7
-        }
-    }
-
-    var material: Material {
-        switch self {
-        case .hero:
-            .regularMaterial
-        case .shelf:
-            .regularMaterial
-        }
-    }
 }
 
 private struct WorkCharacterShelfViewportMask: View {
@@ -2306,11 +1906,12 @@ private struct WorkCharacterShelfViewportMask: View {
 private struct WorkDetailPill: View {
     let text: String
     let systemImage: String
+    var emphasized = false
 
     var body: some View {
         Label(text, systemImage: systemImage)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(emphasized ? .primary : .secondary)
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
             .background(.regularMaterial, in: Capsule())
@@ -2320,128 +1921,57 @@ private struct WorkDetailPill: View {
 private struct WorkHeroBackground: View {
     let work: TagDisplaySummary
     let assetURL: (String) -> URL?
-    let blurAssetURL: (String) async -> URL?
-
     @State private var image: NSImage?
-    @State private var blurredImage: NSImage?
 
     var body: some View {
         GeometryReader { proxy in
             let layout = WorkHeroBackgroundLayout.resolve(size: proxy.size)
-
-            ZStack(alignment: .topLeading) {
-                if let blurredImage {
-                    heroImage(
-                        blurredImage,
-                        layout: layout,
-                        opacity: 0.22,
-                        saturation: 1.0,
-                        extraBleed: layout.edgeFadeWidth * 0.72,
-                        featherScale: 1.35
-                    )
-                }
-
+            let frame = layout.imageFrame
+            ZStack(alignment: .trailing) {
+                Color.clear
                 if let image {
-                    heroImage(
-                        image,
-                        layout: layout,
-                        opacity: 0.82,
-                        saturation: 1.06,
-                        extraBleed: 0,
-                        featherScale: 1.0
-                    )
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .scaleEffect(work.visualProfile?.backgroundScale ?? 1)
+                        .offset(x: (work.visualProfile?.backgroundOffsetX ?? 0) * frame.width,
+                                y: (work.visualProfile?.backgroundOffsetY ?? 0) * frame.height)
+                        .frame(width: frame.width, height: frame.height)
+                        .clipped()
+                        .mask {
+                            HStack(spacing: 0) {
+                                LinearGradient(colors: [.clear, .white], startPoint: .leading, endPoint: .trailing)
+                                    .frame(width: layout.edgeFadeWidth)
+                                Rectangle()
+                            }
+                        }
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
-            .clipped()
+            .mask {
+                LinearGradient(stops: [.init(color: .white, location: 0.90), .init(color: .clear, location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+            }
         }
         .allowsHitTesting(false)
-        .task(id: backgroundAssetIdentity) {
-            guard let backgroundAssetPath,
-                  let backgroundURL = assetURL(backgroundAssetPath) else {
-                image = nil
-                blurredImage = nil
-                return
-            }
-            let loadedImage = await TagVisualImageCache.shared.image(for: backgroundURL)
-            var loadedBlurredImage: NSImage?
-            if let blurURL = await blurAssetURL(backgroundAssetPath) {
-                loadedBlurredImage = await TagVisualImageCache.shared.image(for: blurURL)
-            }
-            if let loadedImage {
-                withAnimation(.easeInOut(duration: 0.18)) {
-                    image = loadedImage
-                    blurredImage = loadedBlurredImage
-                }
-            }
+        .task(id: "\(work.id)-\(work.visualProfile?.backgroundAssetPath ?? "")-\(work.visualProfile?.updatedAt ?? 0)") {
+            image = nil
+            guard let path = work.visualProfile?.backgroundAssetPath, let url = assetURL(path) else { return }
+            let loaded = await TagVisualImageCache.shared.image(for: url)
+            guard !Task.isCancelled else { return }
+            image = loaded
         }
-    }
-
-    private var backgroundAssetPath: String? {
-        work.visualProfile?.backgroundAssetPath
-    }
-
-    private var backgroundAssetIdentity: String {
-        "\(backgroundAssetPath ?? "none"):\(work.visualProfile?.updatedAt ?? 0)"
-    }
-
-    private func heroImage(
-        _ nsImage: NSImage,
-        layout: WorkHeroBackgroundLayout,
-        opacity: Double,
-        saturation: Double,
-        extraBleed: CGFloat,
-        featherScale: CGFloat
-    ) -> some View {
-        let imageFrame = layout.imageFrame.insetBy(dx: -extraBleed, dy: -extraBleed)
-        let scale = work.visualProfile?.backgroundScale ?? 1
-        let offsetX = (work.visualProfile?.backgroundOffsetX ?? 0) * layout.imageFrame.width
-        let offsetY = (work.visualProfile?.backgroundOffsetY ?? 0) * layout.imageFrame.height
-        let featherMetrics = WorkHeroFeatherMaskMetrics.resolve(
-            size: imageFrame.size,
-            baseFadeWidth: layout.edgeFadeWidth * featherScale
-        )
-
-        return Image(nsImage: nsImage)
-            .resizable()
-            .scaledToFill()
-            .scaleEffect(scale)
-            .offset(x: offsetX, y: offsetY)
-            .frame(width: imageFrame.width, height: imageFrame.height)
-            .saturation(saturation)
-            .opacity(opacity)
-            .clipped()
-            .mask {
-                WorkHeroFeatherMask(metrics: featherMetrics)
-            }
-            .position(x: imageFrame.midX, y: imageFrame.midY)
     }
 }
 
 struct WorkHeroBackgroundLayout: Equatable {
     var imageFrame: CGRect
     var edgeFadeWidth: CGFloat
-    var textReadableOverlayWidth: CGFloat
 
-    static func resolve(size: CGSize) -> WorkHeroBackgroundLayout {
+    static func resolve(size: CGSize) -> Self {
         let width = max(size.width, 0)
-        let height = max(size.height, 0)
-        let imageWidthRatio = width >= 980 ? 0.55 : 0.50
-        let imageWidth = max(width * imageWidthRatio, min(width, 380))
-        let imageFrame = CGRect(
-            x: max(width - imageWidth - 18, 0),
-            y: max(height * 0.06, 0),
-            width: min(imageWidth, width),
-            height: max(height * 0.88, 0)
-        )
-        let edgeFadeWidth = min(max(width * 0.085, 68), 180)
-        let textReadableOverlayWidth = min(max(imageFrame.minX + edgeFadeWidth, width * 0.42), width)
-
-        return WorkHeroBackgroundLayout(
-            imageFrame: imageFrame,
-            edgeFadeWidth: edgeFadeWidth,
-            textReadableOverlayWidth: textReadableOverlayWidth
-        )
+        let frame = CGRect(x: width * 0.4, y: 0, width: width * 0.6, height: max(size.height, 0))
+        return Self(imageFrame: frame, edgeFadeWidth: min(width * 0.24, frame.width))
     }
 }
 
@@ -2453,8 +1983,8 @@ struct WorkHeroVisualDropRouting: Equatable {
         let width = max(size.width, 0)
         let height = max(size.height, 0)
         let backgroundLayout = WorkHeroBackgroundLayout.resolve(size: size)
-        let horizontalInset = min(max(width * 0.04, 34), 58)
-        let verticalInset = min(max(height * 0.08, 34), 58)
+        let horizontalInset = min(max(width * 0.04, 16), 58)
+        let verticalInset = min(height * 0.12, max(34, height * 0.08))
         let gap: CGFloat = 18
         let foregroundMaxX = min(
             max(backgroundLayout.imageFrame.minX - gap, horizontalInset),
@@ -2490,68 +2020,6 @@ struct WorkHeroVisualDropRouting: Equatable {
         case .background:
             backgroundFrame.isEmpty ? nil : backgroundFrame
         }
-    }
-}
-
-struct WorkHeroFeatherMaskMetrics: Equatable {
-    var size: CGSize
-    var fadeWidth: CGFloat
-    var centerRect: CGRect
-
-    static func resolve(size: CGSize, baseFadeWidth: CGFloat) -> WorkHeroFeatherMaskMetrics {
-        let width = max(size.width, 0)
-        let height = max(size.height, 0)
-        let shortestSide = min(width, height)
-        let fadeWidth = min(
-            max(baseFadeWidth, 24),
-            max(shortestSide * 0.42, 0)
-        )
-        let centerRect = CGRect(
-            x: min(fadeWidth, width / 2),
-            y: min(fadeWidth, height / 2),
-            width: max(width - fadeWidth * 2, 0),
-            height: max(height - fadeWidth * 2, 0)
-        )
-
-        return WorkHeroFeatherMaskMetrics(
-            size: CGSize(width: width, height: height),
-            fadeWidth: fadeWidth,
-            centerRect: centerRect
-        )
-    }
-}
-
-private struct WorkHeroFeatherMask: View {
-    let metrics: WorkHeroFeatherMaskMetrics
-
-    var body: some View {
-        let fade = metrics.fadeWidth
-        let width = metrics.size.width
-        let height = metrics.size.height
-
-        Rectangle()
-            .fill(.white)
-            .mask {
-                HStack(spacing: 0) {
-                    LinearGradient(colors: [.clear, .white], startPoint: .leading, endPoint: .trailing)
-                        .frame(width: min(fade, width / 2))
-                    Rectangle()
-                        .fill(.white)
-                    LinearGradient(colors: [.white, .clear], startPoint: .leading, endPoint: .trailing)
-                        .frame(width: min(fade, width / 2))
-                }
-            }
-            .mask {
-                VStack(spacing: 0) {
-                    LinearGradient(colors: [.clear, .white], startPoint: .top, endPoint: .bottom)
-                        .frame(height: min(fade, height / 2))
-                    Rectangle()
-                        .fill(.white)
-                    LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .bottom)
-                        .frame(height: min(fade, height / 2))
-                }
-            }
-        .allowsHitTesting(false)
     }
 }
 
@@ -2650,8 +2118,8 @@ private struct WorkCharacterImage: View {
             .clipped()
         }
         .task(id: foregroundAssetIdentity) {
+            image = nil
             guard let foregroundURL else {
-                image = nil
                 onImageAvailabilityChange(false)
                 return
             }
@@ -2664,11 +2132,8 @@ private struct WorkCharacterImage: View {
             } else {
                 loadedImage = await TagVisualImageCache.shared.image(for: foregroundURL)
             }
-            if let loadedImage {
-                image = loadedImage
-            } else {
-                image = nil
-            }
+            guard !Task.isCancelled else { return }
+            image = loadedImage
             onImageAvailabilityChange(loadedImage != nil)
         }
     }
@@ -2689,105 +2154,6 @@ private struct WorkCharacterImage: View {
 
 }
 
-private enum WorkVisualImageKind {
-    case foreground
-    case background
-}
-
-private struct WorkVisualImage: View {
-    let tag: TagDisplaySummary?
-    let kind: WorkVisualImageKind
-    let assetURL: (String) -> URL?
-    let fallbackSystemImage: String
-
-    @State private var image: NSImage?
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack {
-                if let image {
-                    Image(nsImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .scaleEffect(tag.map(scale(for:)) ?? 1)
-                        .offset(
-                            x: (tag.map(offsetX(for:)) ?? 0) * proxy.size.width,
-                            y: (tag.map(offsetY(for:)) ?? 0) * proxy.size.height
-                        )
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                } else {
-                    Image(systemName: fallbackSystemImage)
-                        .font(.system(size: 46, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.78))
-                }
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-            .clipped()
-        }
-        .task(id: assetIdentity) {
-            guard let resolvedURL else {
-                image = nil
-                return
-            }
-            if let loadedImage = await TagVisualImageCache.shared.image(for: resolvedURL) {
-                image = loadedImage
-            }
-        }
-    }
-
-    private var resolvedURL: URL? {
-        guard let tag,
-              let assetPath = assetPath(for: tag) else {
-            return nil
-        }
-        return assetURL(assetPath)
-    }
-
-    private var assetIdentity: String {
-        guard let tag else {
-            return "none"
-        }
-        return "\(assetPath(for: tag) ?? "none"):\(tag.visualProfile?.updatedAt ?? 0)"
-    }
-
-    private func assetPath(for tag: TagDisplaySummary) -> String? {
-        switch kind {
-        case .foreground:
-            tag.visualProfile?.foregroundAssetPath
-        case .background:
-            tag.visualProfile?.backgroundAssetPath
-        }
-    }
-
-    private func scale(for tag: TagDisplaySummary) -> Double {
-        switch kind {
-        case .foreground:
-            tag.visualProfile?.foregroundScale ?? 1
-        case .background:
-            tag.visualProfile?.backgroundScale ?? 1
-        }
-    }
-
-    private func offsetX(for tag: TagDisplaySummary) -> Double {
-        switch kind {
-        case .foreground:
-            tag.visualProfile?.foregroundOffsetX ?? 0
-        case .background:
-            tag.visualProfile?.backgroundOffsetX ?? 0
-        }
-    }
-
-    private func offsetY(for tag: TagDisplaySummary) -> Double {
-        switch kind {
-        case .foreground:
-            tag.visualProfile?.foregroundOffsetY ?? 0
-        case .background:
-            tag.visualProfile?.backgroundOffsetY ?? 0
-        }
-    }
-
-}
-
 private struct WorkDetailCarouselArrowButton: View {
     let systemImage: String
     let help: String
@@ -2803,67 +2169,7 @@ private struct WorkDetailCarouselArrowButton: View {
                 .shadow(color: .black.opacity(0.20), radius: 10, x: 0, y: 4)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(help)
         .help(help)
-    }
-}
-
-private extension View {
-    func workDetailGlassSurface(_ role: WorkDetailSurfaceRole) -> some View {
-        modifier(WorkDetailSurfaceModifier(role: role))
-    }
-
-    @ViewBuilder
-    func workDetailBackgroundExtension() -> some View {
-        if #available(macOS 26.0, *) {
-            backgroundExtensionEffect(isEnabled: true)
-        } else {
-            self
-        }
-    }
-
-    @ViewBuilder
-    func workDetailCharacterGlassRegion() -> some View {
-        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
-
-        if #available(macOS 26.0, *) {
-            glassEffect(.regular, in: shape)
-        } else {
-            background(.regularMaterial, in: shape)
-                .overlay {
-                    shape
-                        .stroke(.white.opacity(0.16), lineWidth: 1)
-                }
-                .shadow(color: .black.opacity(0.03), radius: 10, x: 0, y: 4)
-        }
-    }
-
-}
-
-private struct WorkDetailSurfaceModifier: ViewModifier {
-    let role: WorkDetailSurfaceRole
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: role.cornerRadius, style: .continuous)
-
-        if role == .shelf {
-            content
-        } else if #available(macOS 26.0, *), role == .hero {
-            content
-                .glassEffect(.regular, in: shape)
-        } else {
-            content
-                .background(role.material, in: shape)
-                .overlay {
-                    shape
-                        .stroke(.white.opacity(role.strokeOpacity), lineWidth: 1)
-                }
-                .shadow(
-                    color: .black.opacity(role.shadowOpacity),
-                    radius: role.shadowRadius,
-                    x: 0,
-                    y: role.shadowYOffset
-                )
-        }
     }
 }

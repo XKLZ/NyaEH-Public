@@ -520,6 +520,11 @@ struct BookLibraryService: @unchecked Sendable {
         )
     }
 
+    func addCharacterTag(to bookID: LibraryBook.DatabaseID, pair: WorkCharacterPair) throws -> WorkCharacterTagAddition {
+        guard let workDetailRepository else { throw NyaEHError.groupingRepositoryUnavailable }
+        return try workDetailRepository.addCharacterTag(to: bookID, pair: pair)
+    }
+
     func setWorkCharacterDecision(_ decision: WorkCharacterManualDecision?, pair: WorkCharacterPair) throws {
         guard let workDetailRepository else { throw NyaEHError.groupingRepositoryUnavailable }
         try workDetailRepository.setWorkCharacterDecision(decision, pair: pair)

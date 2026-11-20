@@ -44,7 +44,7 @@ final class TagVisualImageCache {
         }
 
         let worker = Task.detached(priority: .utility) {
-            guard let data = try? Data(contentsOf: url) else { return nil as Data? }
+            guard !Task.isCancelled, let data = try? Data(contentsOf: url) else { return nil as Data? }
             guard !Task.isCancelled else { return nil }
             return CharacterPortraitImageProcessor.displayData(from: data)
         }
@@ -69,7 +69,7 @@ enum CharacterPortraitImageProcessor {
     static let marginFraction = 0.03
 
     static func displayData(from sourceData: Data) -> Data? {
-        guard let bitmap = NSBitmapImageRep(data: sourceData),
+        guard !Task.isCancelled, let bitmap = NSBitmapImageRep(data: sourceData),
               bitmap.pixelsWide > 0, bitmap.pixelsHigh > 0 else {
             return nil
         }
@@ -96,12 +96,14 @@ enum CharacterPortraitImageProcessor {
             return nil
         }
 
+        guard !Task.isCancelled else { return nil }
         let crop = paddedBounds(visible, canvasWidth: width, canvasHeight: height)
         guard crop.width < CGFloat(width) || crop.height < CGFloat(height) else {
             return sourceData
         }
-        guard let cgImage = bitmap.cgImage?.cropping(to: crop),
-              let data = NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:]) else {
+        guard let cgImage = bitmap.cgImage?.cropping(to: crop) else { return sourceData }
+        guard !Task.isCancelled else { return nil }
+        guard let data = NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:]) else {
             return sourceData
         }
         return data
@@ -125,6 +127,7 @@ enum CharacterPortraitImageProcessor {
         var maxX = -1
         var maxY = -1
         for y in 0..<height {
+            if y.isMultiple(of: 16), Task.isCancelled { return nil }
             let row = y * bytesPerRow
             for x in 0..<width where pixels[row + x * samplesPerPixel + alphaIndex] > alphaThreshold {
                 minX = min(minX, x)

@@ -5312,6 +5312,122 @@ struct SQLiteLibraryBookRepositoryTests {
         #expect(confirmed.sections.first { $0.character?.id == personB }?.claimsByBookID[crossoverID]?.source == .manual)
     }
 
+    @Test("adding a character tag updates only the chosen book, search and both topics atomically")
+    func workTopicAddCharacterTagToOneBook() throws {
+        let context = try makeContext()
+        let book = try insertBook(context, title: "Unclassified", hash: "assignment-shared", filepath: "/tmp/assignment-one.cbz",
+                                  tags: #"["parody:one","other:Existing Detail"]"#)
+        let sibling = try insertBook(context, title: "Sibling", hash: "assignment-shared", filepath: "/tmp/assignment-sibling.cbz",
+                                     tags: #"["parody:one"]"#)
+        let origin = try insertBook(context, title: "Elsewhere", hash: "assignment-origin", filepath: "/tmp/assignment-origin.cbz",
+                                    tags: #"["parody:two","character:sora"]"#)
+        let cached = try context.metadata.upsert(GalleryMetadata(hash: book.hash, title: "Shared cached metadata", tags: "[]"))
+        let tags = try context.tags.fetchAllTags()
+        let workID = try #require(tags.first { $0.rawValue == "parody:one" }?.id)
+        let characterID = try #require(tags.first { $0.rawValue == "character:sora" }?.id)
+        let bookID = try #require(book.databaseID)
+        let stored = try #require(try context.books.fetch(id: bookID))
+        let pair = WorkCharacterPair(workID: workID, characterID: characterID)
+        let initial = try #require(try context.workDetails.fetchWorkDetail(parodyTagID: workID, languageCode: nil))
+        #expect(initial.characterCount == 0)
+        #expect(initial.totalBookCount == 2)
+        let addition = try context.workDetails.addCharacterTag(to: bookID, pair: pair)
+        #expect(addition.didChange && addition.isClassified)
+        let raw = try JSONDecoder().decode([String].self, from: Data(addition.book.tags.utf8))
+        #expect(raw == ["parody:one", "other:Existing Detail", "character:sora"])
+        var expected = stored
+        expected.tags = addition.book.tags
+        expected.updatedAt = addition.book.updatedAt
+        #expect(addition.book == expected)
+        #expect(try context.metadata.fetch(hash: book.hash) == cached)
+        #expect(try context.books.fetch(id: #require(sibling.databaseID))?.tags == sibling.tags)
+        let detail = try #require(try context.workDetails.fetchWorkDetail(parodyTagID: workID, languageCode: nil))
+        #expect(detail.characterCount == 1 && detail.totalBookCount == 2)
+        #expect(detail.sections.first { $0.character?.id == characterID }?.books.map(\.databaseID) == [bookID])
+        #expect(detail.sections.first { $0.character == nil }?.books.map(\.databaseID) == [sibling.databaseID])
+        let person = try #require(try context.workDetails.fetchCharacterDetail(characterTagID: characterID, languageCode: nil))
+        #expect(person.sections.first { $0.work?.id == workID }?.books.map(\.databaseID) == [bookID])
+        let search = SQLiteLibrarySearchRepository(dbQueue: context.database.dbQueue)
+        let matched = try search.search(.init(rawQuery: "character:sora", showsIndividualBooks: true))
+        #expect(Set(matched.items.compactMap(\.databaseID)) == Set([origin.databaseID, bookID].compactMap { $0 }))
+        let duplicate = try context.workDetails.addCharacterTag(to: bookID, pair: pair)
+        #expect(!duplicate.didChange && duplicate.isClassified)
+        #expect(duplicate.book == addition.book)
+    }
+
+    @Test("adding a tag to a crossover keeps uncertain global relationships unclassified")
+    func workTopicAddCharacterTagKeepsAmbiguousAssignment() throws {
+        let context = try makeContext()
+        let crossover = try insertBook(context, title: "Crossover", hash: "assignment-cross", filepath: "/tmp/assignment-cross.cbz",
+                                       tags: #"["parody:one","parody:two"]"#)
+        _ = try insertBook(context, title: "Other", hash: "assignment-elsewhere", filepath: "/tmp/assignment-else.cbz",
+                           tags: #"["parody:three","character:sora"]"#)
+        _ = try context.workCharacters.rebuildIndex()
+        let tags = try context.tags.fetchAllTags()
+        let workID = try #require(tags.first { $0.rawValue == "parody:one" }?.id)
+        let characterID = try #require(tags.first { $0.rawValue == "character:sora" }?.id)
+        let bookID = try #require(crossover.databaseID)
+        let pair = WorkCharacterPair(workID: workID, characterID: characterID)
+        let addition = try context.workDetails.addCharacterTag(to: bookID, pair: pair)
+        #expect(addition.didChange && !addition.isClassified)
+        #expect(try context.tags.tags(forBookID: bookID).contains { $0.id == characterID })
+        let detail = try #require(try context.workDetails.fetchWorkDetail(parodyTagID: workID, languageCode: nil))
+        #expect(detail.sections.count == 1 && detail.sections.first?.character == nil)
+        #expect(try context.workDetails.fetchWorkCharacterCandidates(parodyTagID: workID, languageCode: nil)
+            .first { $0.id == characterID }?.decision == nil)
+        let otherWork = try #require(tags.first { $0.rawValue == "parody:three" }?.id)
+        #expect(throws: LibraryDeletionError.self) {
+            try context.workDetails.addCharacterTag(to: bookID, pair: WorkCharacterPair(workID: otherWork, characterID: characterID))
+        }
+    }
+
+    @MainActor
+    @Test("tag assignment publishes the book change and keeps the active topic available as counts refresh")
+    func workTopicAddCharacterTagRefreshesActiveStore() async throws {
+        let context = try makeContext()
+        let book = try insertBook(context, title: "Needs a character", hash: "store-assign", filepath: "/tmp/store-assign.cbz",
+                                  tags: #"["parody:one"]"#)
+        _ = try insertBook(context, title: "Other", hash: "store-seed", filepath: "/tmp/store-seed.cbz",
+                           tags: #"["parody:two","character:sora"]"#)
+        let tags = try context.tags.fetchAllTags()
+        let work = try #require(tags.first { $0.rawValue == "parody:one" }?.id)
+        let person = try #require(tags.first { $0.rawValue == "character:sora" }?.id)
+        let bookID = try #require(book.databaseID)
+        try context.tags.upsertTranslation(tagID: person, languageCode: EhTagTranslationCache.languageCode, translatedName: "角色甲")
+        let changes = LibraryChangeBus()
+        let service = BookLibraryService(bookRepository: context.books, metadataRepository: context.metadata, tagRepository: context.tags,
+                                         searchRepository: SQLiteLibrarySearchRepository(dbQueue: context.database.dbQueue),
+                                         collectionRepository: context.collections, versionGroupRepository: context.versionGroups,
+                                         workDetailRepository: context.workDetails, tagVisualAssetService: nil,
+                                         tagTranslationUpdateService: nil, coverCache: nil)
+        let store = CatalogStore(service: service, changeBus: changes)
+        store.refresh()
+        store.reloadWorkDetail(tagID: work, isTagTranslationEnabled: true)
+        await store.waitForWorkDetailLoad(tagID: work)
+        #expect(store.workDetail(tagID: work)?.characterCount == 0)
+        let choices = try await store.searchCharacterTags("角色甲", isTagTranslationEnabled: true)
+        #expect(choices.map(\.id) == [person])
+        #expect(choices.first?.displayText == "角色甲")
+        store.reloadCharacterDetail(tagID: person, isTagTranslationEnabled: true)
+        await store.waitForCharacterDetailLoad(tagID: person)
+        #expect(store.characterDetail(tagID: person) != nil)
+        try await store.addCharacterTag(to: bookID, pair: .init(workID: work, characterID: person), isTagTranslationEnabled: true)
+        #expect(store.workDetail(tagID: work) != nil)
+        #expect(store.unconfirmedCharacterAssignmentWorkID == nil)
+        #expect(changes.lastChange == .tagsChanged([bookID]))
+        #expect(store.book(id: book.id)?.tags.contains("character:sora") == true)
+        await store.waitForWorkDetailLoad(tagID: work)
+        let updated = try #require(store.workDetail(tagID: work))
+        #expect(updated.characterCount == 1 && updated.totalBookCount == 1)
+        #expect(updated.sections.first?.character?.displayText == "角色甲")
+        let updatedBook = try #require(store.book(id: book.id))
+        #expect(store.displayTags(for: updatedBook, isTagTranslationEnabled: true).contains { $0.displayText == "角色甲" })
+        #expect(store.characterDetail(tagID: person) == nil)
+        store.reloadCharacterDetail(tagID: person, isTagTranslationEnabled: true)
+        await store.waitForCharacterDetailLoad(tagID: person)
+        #expect(store.characterDetail(tagID: person)?.sections.first { $0.work?.id == work }?.books.map(\.id) == [book.id])
+    }
+
     @Test("manual work-character decisions survive index rebuild and override indexed evidence")
     func manualWorkCharacterDecisionsSurviveRebuild() throws {
         let context = try makeContext()

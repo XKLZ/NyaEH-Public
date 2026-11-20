@@ -107,21 +107,25 @@ final class SQLiteWorkCharacterRepository: WorkCharacterRepository {
     }
 
     private func insertLinks(db: Database, since lastIndexedAt: Int64?) throws {
-        let now = Timestamp.nowMilliseconds()
-        var arguments = StatementArguments()
-        var staleFilter = ""
         if let lastIndexedAt {
-            staleFilter = "WHERE library_books.updated_at > ?"
-            arguments += [lastIndexedAt]
+            try Self.insertLinks(db: db, filter: "WHERE library_books.updated_at > ?", arguments: [lastIndexedAt])
+        } else {
+            try Self.insertLinks(db: db, filter: "", arguments: [])
         }
-        arguments += [now, now]
+    }
 
+    static func insertMissingLinks(for bookID: LibraryBook.DatabaseID, db: Database) throws {
+        try insertLinks(db: db, filter: "WHERE library_books.id = ?", arguments: [bookID])
+    }
+
+    private static func insertLinks(db: Database, filter: String, arguments: StatementArguments) throws {
+        let now = Timestamp.nowMilliseconds()
         try db.execute(
             sql: """
                 WITH stale_books AS (
                     SELECT library_books.id
                     FROM library_books
-                    \(staleFilter)
+                    \(filter)
                 ),
                 parody_books AS (
                     SELECT book_tags.book_id,
@@ -156,7 +160,7 @@ final class SQLiteWorkCharacterRepository: WorkCharacterRepository {
                 WHERE parody_books.parody_count = 1
                   AND LOWER(TRIM(parody_books.parody_name)) <> 'origin'
                 """,
-            arguments: arguments
+            arguments: arguments + [now, now]
         )
     }
 

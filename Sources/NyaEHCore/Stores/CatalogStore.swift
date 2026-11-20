@@ -94,6 +94,7 @@ final class CatalogStore: BookCardLibrary {
     var loadingWorkDetailIDs: Set<Tag.DatabaseID> = []
     var workDetailErrors: [Tag.DatabaseID: String] = [:]
     var workDetailRevision = 0
+    var unconfirmedCharacterAssignmentWorkID: Tag.DatabaseID?
     var characterDetailCache: [Tag.DatabaseID: CharacterDetail] = [:]
     var characterDetailTranslationStates: [Tag.DatabaseID: Bool] = [:]
     var loadingCharacterDetailIDs: Set<Tag.DatabaseID> = []
@@ -1144,6 +1145,39 @@ final class CatalogStore: BookCardLibrary {
         }.value
     }
 
+    func searchCharacterTags(_ query: String, isTagTranslationEnabled: Bool) async throws -> [TagDisplaySummary] {
+        let service = service
+        let request = SearchTagSuggestionRequest(query: query, namespace: "character", isTagTranslationEnabled: isTagTranslationEnabled)
+        return try await Task.detached(priority: .userInitiated) {
+            try Task.checkCancellation()
+            return try service.searchTagSuggestions(request).map(\.tag)
+        }.cancellableValue
+    }
+
+    func addCharacterTag(to bookID: LibraryBook.DatabaseID, pair: WorkCharacterPair, isTagTranslationEnabled: Bool) async throws {
+        guard !isDeletingBook else { throw LibraryDeletionError.bookUnavailable }
+        let service = service
+        let addition = try await Task.detached(priority: .userInitiated) {
+            try service.addCharacterTag(to: bookID, pair: pair)
+        }.cancellableValue
+        if !addition.isClassified && !Task.isCancelled {
+            unconfirmedCharacterAssignmentWorkID = pair.workID
+        }
+        guard addition.didChange else { return }
+
+        // A concurrent organization edit may already be visible in the UI. Patch only the fields we own.
+        if var current = book(id: addition.book.id) {
+            current.tags = addition.book.tags
+            current.updatedAt = max(current.updatedAt, addition.book.updatedAt)
+            applyBookUpdatesIncrementally([current])
+        }
+        invalidateTagSummaries()
+        reloadSearchAfterLibraryChange()
+        changeBus.publish(.tagsChanged([bookID]))
+        invalidateWorkDetails(keepingVisibleWork: pair.workID)
+        reloadWorkDetail(tagID: pair.workID, isTagTranslationEnabled: isTagTranslationEnabled)
+    }
+
     func setWorkCharacterDecision(_ decision: WorkCharacterManualDecision?, pair: WorkCharacterPair) async throws {
         let service = service
         try await Task.detached(priority: .userInitiated) {
@@ -1272,10 +1306,15 @@ final class CatalogStore: BookCardLibrary {
         }
     }
 
-    private func invalidateWorkDetails() {
+    private func invalidateWorkDetails(keepingVisibleWork workID: Tag.DatabaseID? = nil) {
         workDetailLoadTasks.values.forEach { $0.cancel() }
         workDetailLoadTasks.removeAll()
-        workDetailCache.removeAll()
+        // Keep the active topic on screen while it refreshes after a single-book assignment.
+        if let workID, let current = workDetailCache[workID] {
+            workDetailCache = [workID: current]
+        } else {
+            workDetailCache.removeAll()
+        }
         workDetailTranslationStates.removeAll()
         workDetailErrors.removeAll()
         loadingWorkDetailIDs.removeAll()

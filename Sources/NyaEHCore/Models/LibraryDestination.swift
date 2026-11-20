@@ -2,6 +2,7 @@
 
 import Foundation
 import CoreGraphics
+import Observation
 
 enum LibraryDestination: Hashable, Identifiable, Sendable {
     case home
@@ -236,7 +237,51 @@ enum WorkDetailRouteScrollCachePolicy {
     }
 }
 
-final class WorkDetailRouteScrollOffsetStore {
+enum WorkTopicSelection: Equatable {
+    case character(Tag.DatabaseID)
+    case unclassified
+
+    static func resolved(_ previous: Self?, in detail: WorkDetail) -> Self? {
+        switch previous {
+        case let .character(id) where detail.section(for: id) != nil: return previous
+        case .unclassified where !detail.unclassifiedBooks.isEmpty: return previous
+        default:
+            if let first = detail.characters.first { return .character(first.id) }
+            return detail.unclassifiedBooks.isEmpty ? nil : .unclassified
+        }
+    }
+}
+
+@MainActor final class WorkTopicScrollMemory {
+    var offset: CGFloat = 0
+}
+
+// A route owns this transient state until it is popped. Raw scroll offsets do not invalidate its views.
+@MainActor @Observable final class WorkTopicBrowsingState {
+    var selection: WorkTopicSelection?
+    var prefersTitle = false
+    let selector = WorkTopicScrollMemory()
+    let vertical = WorkTopicScrollMemory()
+    @ObservationIgnored private var shelves: [Tag.DatabaseID: WorkTopicScrollMemory] = [:]
+
+    func shelf(for characterID: Tag.DatabaseID) -> WorkTopicScrollMemory {
+        if let existing = shelves[characterID] { return existing }
+        let result = WorkTopicScrollMemory()
+        shelves[characterID] = result
+        return result
+    }
+}
+
+@MainActor final class WorkDetailRouteScrollOffsetStore {
+    private var workStates: [LibraryRoute.ID: WorkTopicBrowsingState] = [:]
+
+    func workState(for routeID: LibraryRoute.ID) -> WorkTopicBrowsingState {
+        if let existing = workStates[routeID] { return existing }
+        let state = WorkTopicBrowsingState()
+        workStates[routeID] = state
+        return state
+    }
+
     private var offsets: [LibraryRoute.ID: CGFloat] = [:]
 
     func offset(for routeID: LibraryRoute.ID) -> CGFloat? {
@@ -248,10 +293,13 @@ final class WorkDetailRouteScrollOffsetStore {
     }
 
     func clearAfterBaseDestinationChange() {
+        workStates.removeAll()
         offsets = WorkDetailRouteScrollCachePolicy.cacheAfterBaseDestinationChange(offsets)
     }
 
     func pruneAfterPathChange(oldPath: [LibraryRoute], newPath: [LibraryRoute]) {
+        let retained = Set(newPath.map(\.id))
+        workStates = workStates.filter { retained.contains($0.key) }
         offsets = WorkDetailRouteScrollCachePolicy.cacheAfterPathChange(
             offsets,
             oldPath: oldPath,

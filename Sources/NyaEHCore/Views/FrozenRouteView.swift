@@ -92,92 +92,89 @@ struct FrozenBookRouteView: View {
 
 struct WorkDetailTransitionShell: View {
     let detail: WorkDetail?
+    let browsing: WorkTopicBrowsingState
     let fallbackTitle: String
     let localizer: AppLocalizer
 
     var body: some View {
-        // 转场 shell 是同页骨架，不是新页面；它遮住真实重视图挂载时间，避免导航动画期间出现空白或卡顿。
-        ZStack(alignment: .top) {
-            Rectangle()
-                .fill(Color(nsColor: .windowBackgroundColor))
-                .ignoresSafeArea()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    heroShell
-
-                    LazyVStack(alignment: .leading, spacing: 14) {
-                        if let detail {
-                            ForEach(detail.sections.prefix(WorkDetailSectionRenderBudget.initialUnlockedCount)) { section in
-                                WorkCharacterShelfPlaceholder(
-                                    usesDoubleRow: WorkCharacterShelfLayout.usesDoubleRow(bookCount: section.bookCount)
-                                )
-                            }
-                        } else {
-                            ForEach(0..<WorkDetailSectionRenderBudget.initialUnlockedCount, id: \.self) { index in
-                                WorkCharacterShelfPlaceholder(usesDoubleRow: index == 0)
-                            }
+        WorkTopicLayout(browsing: browsing, isPlaceholder: true) { presentation in
+            WorkTopicHeroControls(presentation: presentation) {
+                Text(detail?.work.displayText ?? fallbackTitle)
+                    .font(.system(size: presentation.interpolate(48, 18), weight: .bold))
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                WorkTopicHeroCounts(characterCount: detail?.characterCount ?? 0,
+                                    bookCount: detail?.totalBookCount ?? 0, localizer: localizer)
+                Text(detail?.work.translationIntro ?? localizer.string(.workDetailNoIntro))
+                    .font(.title3.weight(.medium)).lineSpacing(3).lineLimit(4)
+                    .opacity(presentation.introductionOpacity)
+                Capsule().fill(.secondary.opacity(0.14))
+            }
+        } selector: {
+            HStack(spacing: 10) {
+                selectorSlots
+                if detail?.unclassifiedBooks.isEmpty == false {
+                    actionSlot
+                }
+                actionSlot
+            }
+            .padding(.trailing, 16)
+            .frame(height: WorkTopicSelector.height)
+        } content: {
+            if let detail {
+                switch WorkTopicSelection.resolved(browsing.selection, in: detail) {
+                case let .character(id):
+                    if let section = detail.section(for: id) {
+                        WorkCharacterShelfPlaceholder(usesDoubleRow: WorkCharacterShelfLayout.usesDoubleRow(bookCount: section.bookCount))
+                    }
+                case .unclassified:
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        Text(localizer.string(.workTopicUnclassified)).font(.title2.bold())
+                        ForEach(detail.unclassifiedBooks) { _ in
+                            RoundedRectangle(cornerRadius: 8).fill(.secondary.opacity(0.12)).frame(height: 56)
+                            Divider()
                         }
                     }
-                    .padding(.horizontal, 34)
+                    .padding(20)
+                    .modifier(WorkTopicReadableContent())
+                case nil:
+                    Color.clear.frame(height: 260).modifier(WorkTopicReadableContent())
                 }
-                .padding(.bottom, 34)
-                .frame(maxWidth: 1540, alignment: .topLeading)
-                .frame(maxWidth: .infinity, alignment: .top)
+            } else {
+                WorkCharacterShelfPlaceholder(usesDoubleRow: false)
             }
         }
         .redacted(reason: .placeholder)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
-    private var heroShell: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            RoundedRectangle(cornerRadius: 18)
-                .fill(.secondary.opacity(0.16))
-                .frame(width: 330, height: 185)
+    private var actionSlot: some View {
+        RoundedRectangle(cornerRadius: 15).fill(.secondary.opacity(0.12))
+            .frame(width: WorkTopicSelector.cardSize.width, height: WorkTopicSelector.cardSize.height)
+    }
 
-            Text(detail?.work.displayText ?? fallbackTitle)
-                .font(.system(size: 54, weight: .bold))
-                .lineLimit(2)
-
-            HStack(spacing: 10) {
-                ForEach(metrics, id: \.self) { metric in
-                    Text(metric)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(.regularMaterial, in: Capsule())
-                }
+    private var selectorSlots: some View {
+        let characters = detail?.characters
+        let count = characters?.count ?? 4
+        let selection = browsing.selection
+        let offset = browsing.selector.offset
+        return Canvas { context, viewport in
+            let card = WorkTopicSelector.cardSize
+            let step = card.width + 10
+            let occupied = max(0, CGFloat(count) * step - 10)
+            let scroll = min(offset, max(0, occupied + 24 - viewport.width))
+            let leading = max(12, (viewport.width - occupied) / 2) - scroll
+            let first = max(0, Int(floor(-leading / step)))
+            let end = min(count, Int(ceil((viewport.width - leading) / step)))
+            guard first < end else { return }
+            for index in first..<end {
+                if let characters, selection == .character(characters[index].id) { continue }
+                let origin = CGPoint(x: leading + CGFloat(index) * step, y: (viewport.height - card.height) / 2)
+                let path = Path(roundedRect: CGRect(origin: origin, size: card), cornerRadius: 15)
+                context.fill(path, with: .style(.secondary.opacity(0.12)))
             }
-
-            RoundedRectangle(cornerRadius: 8)
-                .fill(.secondary.opacity(0.16))
-                .frame(maxWidth: 760, minHeight: 72, maxHeight: 72)
         }
-        .frame(maxWidth: 920, alignment: .leading)
-        .padding(.horizontal, 58)
-        .padding(.top, 58)
-        .padding(.bottom, 54)
-        .frame(maxWidth: .infinity, minHeight: 520, alignment: .bottomLeading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(.white.opacity(0.16), lineWidth: 1)
-        }
-        .padding(.horizontal, 34)
-    }
-
-    private var metrics: [String] {
-        guard let detail else {
-            return [
-                localizer.workDetailCharacterCount(12),
-                localizer.workDetailBookCount(48)
-            ]
-        }
-        return [
-            localizer.workDetailCharacterCount(detail.characterCount),
-            localizer.workDetailBookCount(detail.totalBookCount)
-        ]
     }
 }
 

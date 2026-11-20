@@ -338,7 +338,7 @@ struct AppPreferencesTests {
         #expect(WorkDetailRouteScrollCachePolicy.cacheAfterBaseDestinationChange(cache).isEmpty)
     }
 
-    @Test("work detail route scroll store mutates outside observation")
+    @MainActor @Test("work detail route scroll store mutates outside observation")
     func workDetailRouteScrollStoreMutatesOutsideObservation() {
         let store = WorkDetailRouteScrollOffsetStore()
         let route = LibraryRoute.workDetail(42)
@@ -759,51 +759,68 @@ struct AppPreferencesTests {
         #expect(!state.acceptsResult(bookID: "book-2", isCancelled: false))
     }
 
-    @Test("work character shelf visual state keeps foreground static")
-    func workCharacterShelfVisualStateKeepsForegroundStatic() {
-        let visualState = WorkCharacterShelfVisualState.resolve(hasForegroundAsset: true)
+    @Test("work topics select a single character and maintain counts as the snapshot changes")
+    func workTopicSelectionAndOverview() {
+        let work = visualTag(id: 1, namespace: "parody", name: "Work")
+        let first = visualTag(id: 2, namespace: "character", name: "A")
+        let second = visualTag(id: 3, namespace: "character", name: "B")
+        let shared = LibraryBook(databaseID: 11, title: "Shared", hash: "s", filepath: "/tmp/shared.cbz")
+        let pending = LibraryBook(databaseID: 12, title: "Other", hash: "o", filepath: "/tmp/other.cbz")
+        var detail = WorkDetail(work: work, sections: [
+            .init(character: first, books: [shared]), .init(character: second, books: [shared]),
+            .init(character: nil, books: [pending])
+        ])
+        #expect(detail.totalBookCount == 2)
+        #expect(detail.characters.map(\.id) == [2, 3])
+        #expect(WorkTopicSelection.resolved(nil, in: detail) == .character(2))
+        #expect(WorkTopicSelection.resolved(.character(3), in: detail) == .character(3))
+        #expect(WorkTopicSelection.resolved(.character(99), in: detail) == .character(2))
+        #expect(WorkTopicSelection.resolved(.unclassified, in: detail) == .unclassified)
 
-        #expect(!visualState.showsPlaceholder)
-        #expect(visualState.characterShadowOpacity > 0)
-        #expect(visualState.characterShadowRadius > 0)
-        #expect(visualState.characterShadowYOffset > 0)
+        detail.sections = [.init(character: nil, books: [pending])]
+        #expect(detail.totalBookCount == 1)
+        #expect(WorkTopicSelection.resolved(.character(3), in: detail) == .unclassified)
+        detail.sections = [.init(character: second, books: [pending])]
+        #expect(WorkTopicSelection.resolved(.unclassified, in: detail) == .character(3))
+        detail.sections = []
+        #expect(WorkTopicSelection.resolved(.unclassified, in: detail) == nil)
     }
 
-    @Test("work character shelf split layout keeps character and content columns stable")
-    func workCharacterShelfSplitLayoutKeeepsCharacterAndContentColumnsStable() {
-        let layout = WorkCharacterShelfSplitMetrics.resolve(containerSize: CGSize(width: 1_200, height: 520))
-
-        #expect(layout.characterColumnWidth >= WorkCharacterShelfSplitLayout.minCharacterColumnWidth)
-        #expect(layout.characterColumnWidth <= WorkCharacterShelfSplitLayout.maxCharacterColumnWidth)
-        #expect(layout.contentColumnWidth >= WorkCharacterShelfSplitLayout.minimumContentWidth)
-        #expect(WorkCharacterShelfSplitLayout.keepsContentOutsideCharacterColumn(
-            characterColumnWidth: layout.characterColumnWidth,
-            contentColumnWidth: layout.contentColumnWidth,
-            containerWidth: 1_200
-        ))
+    @Test("work topic books start beside the portrait and scroll all the way to the window edge")
+    func workTopicStageResizes() {
+        for width: CGFloat in [340, 420, 760, 1200, 2500] {
+            for sidebar: CGFloat in [0, 200] where width - sidebar >= 300 {
+                let stage = WorkTopicStageLayout(available: width, underlap: sidebar)
+                #expect(stage.width == width)
+                #expect(stage.panelX > sidebar)
+                #expect(stage.portraitWidth > 0)
+                #expect(stage.firstCoverX == stage.panelRight + WorkTopicStageLayout.cardInset)
+                #expect(stage.usableShelfWidth >= WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: false).cardWidth)
+                #expect(stage.firstCoverX + stage.usableShelfWidth <= width)
+            }
+        }
+        let shown = WorkTopicStageLayout(available: 1000, underlap: 230)
+        let hidden = WorkTopicStageLayout(available: 770, underlap: 0)
+        #expect(shown.firstCoverX == hidden.firstCoverX + 230)
+        #expect(shown.usableShelfWidth == hidden.usableShelfWidth)
     }
 
-    @Test("work character shelf split layout keeps badge insets compact and stable")
-    func workCharacterShelfSplitLayoutKeepsBadgeInsetsCompactAndStable() {
-        let layout = WorkCharacterShelfSplitMetrics.resolve(containerSize: CGSize(width: 1_200, height: 520))
-
-        #expect(layout.capsuleInsets.leading > 0)
-        #expect(layout.capsuleInsets.bottom > 0)
-        #expect(layout.capsuleInsets.leading <= 18)
-        #expect(layout.capsuleInsets.bottom <= 16)
+    @MainActor @Test("work topic glass interpolates from the selector to the large panel")
+    func workTopicGlassOpacity() {
+        #expect(WorkTopicCharacterGlass(expansion: 0).glassOpacity == 1)
+        #expect(abs(WorkTopicCharacterGlass(expansion: 0.5).glassOpacity - 0.84) < 0.0001)
+        #expect(WorkTopicCharacterGlass(expansion: 1).glassOpacity == 0.68)
     }
 
     @Test("work character shelf viewport mask stays light and nonnegative")
     func workCharacterShelfViewportMaskStaysLightAndNonnegative() {
-        let layout = WorkCharacterShelfSplitMetrics.resolve(containerSize: CGSize(width: 1_200, height: 520))
         let wide = WorkCharacterShelfViewportMaskMetrics.resolve(
-            size: CGSize(width: layout.contentColumnWidth, height: 260),
-            preferredFadeWidth: layout.viewportFadeWidth
+            size: CGSize(width: 800, height: 260),
+            preferredFadeWidth: 24
         )
-        let narrowLayout = WorkCharacterShelfSplitMetrics.resolve(containerSize: CGSize(width: 420, height: 520))
         let narrow = WorkCharacterShelfViewportMaskMetrics.resolve(
-            size: CGSize(width: narrowLayout.contentColumnWidth, height: 260),
-            preferredFadeWidth: narrowLayout.viewportFadeWidth
+            size: CGSize(width: 280, height: 260),
+            preferredFadeWidth: 18
         )
         let empty = WorkCharacterShelfViewportMaskMetrics.resolve(
             size: .zero,
@@ -819,13 +836,15 @@ struct AppPreferencesTests {
         #expect(empty.opaqueWidth == 0)
     }
 
-    @Test("work character shelf badge width stays content-sized")
-    func workCharacterShelfBadgeWidthStaysContentSized() {
-        let layout = WorkCharacterShelfSplitMetrics.resolve(containerSize: CGSize(width: 1_200, height: 520))
-        let maxBadgeWidth = layout.characterColumnWidth - layout.capsuleInsets.leading - layout.capsuleInsets.trailing
-
-        #expect(maxBadgeWidth < layout.characterColumnWidth)
-        #expect(maxBadgeWidth > 0)
+    @Test("work topic shelf navigation tracks mouse and button offsets at any window width")
+    func workTopicShelfScrollEdges() {
+        let left = ShelfScrollGeometry(offsetX: 0, maxOffsetX: 128)
+        let middle = ShelfScrollGeometry(offsetX: 40, maxOffsetX: 128)
+        let right = ShelfScrollGeometry(offsetX: 128, maxOffsetX: 128)
+        #expect(!left.canScrollBackward && left.canScrollForward)
+        #expect(middle.canScrollBackward && middle.canScrollForward)
+        #expect(right.canScrollBackward && !right.canScrollForward)
+        #expect(!ShelfScrollGeometry().canScrollForward)
     }
 
     @Test("book card metrics expose compact single line title height")
@@ -957,16 +976,22 @@ struct AppPreferencesTests {
         #expect(height >= expectedMinimum)
     }
 
-    @Test("work shelf background contains the carousel and preserves the portrait minimum",
-          arguments: [6, 7], [BookCardFields.all, .metadata, []])
+    @Test("work topic stage always reserves the two-row portrait height while books use their actual row count",
+          arguments: [1, 6, 7], [BookCardFields.all, .metadata, []])
     func workShelfFitsDisplayedCardFields(bookCount: Int, fields: BookCardFields) {
-        let doubleRow = WorkCharacterShelfLayout.usesDoubleRow(bookCount: bookCount)
-        let metrics = WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: doubleRow)
-        let carouselHeight = WorkCharacterShelfMetrics.carouselHeight(metrics: metrics, usesDoubleRow: doubleRow, fields: fields)
-        let shelfHeight = WorkCharacterShelfMetrics.shelfHeight(usesDoubleRow: doubleRow, carouselHeight: carouselHeight)
+        let usesDoubleRow = WorkCharacterShelfLayout.usesDoubleRow(bookCount: bookCount)
+        let metrics = WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: usesDoubleRow)
+        let shelfHeight = WorkCharacterShelfMetrics.carouselHeight(metrics: metrics, usesDoubleRow: usesDoubleRow, fields: fields)
+        let doubleMetrics = WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: true)
+        let panelHeight = WorkTopicStageLayout.panelHeight(fields: fields)
+        let stageHeight = WorkTopicStageLayout.height(fields: fields)
 
-        #expect(shelfHeight >= carouselHeight)
-        #expect(shelfHeight == (bookCount == 6 ? 520 : (fields == .all ? 620 : 590)))
+        #expect(usesDoubleRow == (bookCount >= 7))
+        #expect(panelHeight == doubleMetrics.cardHeight(for: fields) * 2 + WorkCharacterShelfMetrics.doubleRowSpacing)
+        #expect(stageHeight == panelHeight + WorkCharacterShelfMetrics.verticalCardPadding)
+        #expect(usesDoubleRow ? shelfHeight == stageHeight : shelfHeight < stageHeight)
+        if fields == .all { #expect(panelHeight == 600) }
+        if fields.isEmpty { #expect(panelHeight == 448) }
     }
 
     @Test("work detail render phase shows loading shell before uncached content")
@@ -1021,7 +1046,9 @@ struct AppPreferencesTests {
         #expect(layout.imageFrame.minX > textSafetyMaxX)
         #expect(layout.imageFrame.maxX <= 1440)
         #expect(layout.imageFrame.width >= 760)
-        #expect(layout.textReadableOverlayWidth <= layout.imageFrame.minX + layout.edgeFadeWidth)
+        #expect(layout.imageFrame.maxX == 1440)
+        #expect(layout.imageFrame.minY == 0)
+        #expect(layout.imageFrame.height == 520)
     }
 
     @Test("work hero background layout keeps stable nonnegative dimensions")
@@ -1039,7 +1066,7 @@ struct AppPreferencesTests {
             #expect(layout.imageFrame.height >= 0)
             #expect(layout.imageFrame.maxX <= size.width + 0.001)
             #expect(layout.edgeFadeWidth > 0)
-            #expect(layout.textReadableOverlayWidth <= size.width)
+            #expect(layout.edgeFadeWidth <= layout.imageFrame.width)
         }
     }
 
@@ -1050,7 +1077,7 @@ struct AppPreferencesTests {
 
         #expect(routing.kind(at: CGPoint(x: routing.foregroundFrame.midX, y: routing.foregroundFrame.midY)) == .foreground)
         #expect(routing.kind(at: CGPoint(x: routing.backgroundFrame.midX, y: routing.backgroundFrame.midY)) == .background)
-        #expect(routing.kind(at: CGPoint(x: size.width * 0.52, y: size.height - 12)) == nil)
+        #expect(routing.kind(at: CGPoint(x: size.width * 0.52, y: size.height - 12)) == .background)
     }
 
     @Test("work hero visual drop routing keeps frames stable")
@@ -1072,26 +1099,60 @@ struct AppPreferencesTests {
         }
     }
 
-    @Test("work hero feather mask clamps fade width")
-    func workHeroFeatherMaskClampsFadeWidth() {
-        let small = WorkHeroFeatherMaskMetrics.resolve(size: CGSize(width: 220, height: 120), baseFadeWidth: 180)
-        let wide = WorkHeroFeatherMaskMetrics.resolve(size: CGSize(width: 820, height: 420), baseFadeWidth: 110)
-
-        #expect(small.fadeWidth <= 120 * 0.42)
-        #expect(small.fadeWidth >= 24)
-        #expect(wide.fadeWidth == 110)
+    @Test("work topic hero has the same controls throughout its bounded collapse")
+    func workTopicHeaderHeight() {
+        #expect(WorkTopicHeaderMetrics(viewportHeight: 570, offset: 0).height == 440)
+        #expect(WorkTopicHeaderMetrics(viewportHeight: 1000, offset: 0).height == 520)
+        let expanded = WorkTopicHeaderMetrics(viewportHeight: 800, offset: 0)
+        let middle = WorkTopicHeaderMetrics(viewportHeight: 800, offset: expanded.travel / 2)
+        let compact = WorkTopicHeaderMetrics(viewportHeight: 800, offset: expanded.travel + 30)
+        #expect(expanded.progress == 0 && middle.progress == 0.5 && compact.progress == 1)
+        #expect(compact.height == 64 && expanded.artworkOpacity == 1 && compact.artworkOpacity == 0)
+        #expect(middle.introductionOpacity < middle.artworkOpacity)
+        #expect(compact.introductionOpacity == 0 && compact.searchLabelOpacity == 0)
+        for width: CGFloat in [400, 700, 1420] {
+            let frames = [expanded, middle, compact].map {
+                WorkTopicHeroFrames.resolve(width: width, inset: 30, introHeight: 76, presentation: $0)
+            }
+            for step in 0...100 {
+                let p = WorkTopicHeaderMetrics(viewportHeight: 800, offset: expanded.travel * CGFloat(step) / 100)
+                let bounds = WorkTopicHeroFrames.resolve(width: width, inset: 30, introHeight: 76, presentation: p)
+                #expect(!bounds[0].intersects(bounds[1]))
+                if p.searchLabelOpacity > 0 { #expect(p.searchLabelSpace == 1) }
+            }
+            let row = frames[2]
+            #expect(row.count == 4)
+            #expect(row[0].maxX <= row[1].minX && row[1].maxX <= row[3].minX)
+            #expect([row[0], row[1], row[3]].allSatisfy { $0.midY == compact.height / 2 })
+            #expect(frames[0][2].maxX <= width * 0.5)
+            #expect(!WorkHeroVisualDropRouting.resolve(size: .init(width: width, height: compact.height)).foregroundFrame.isEmpty)
+        }
     }
 
-    @Test("work hero feather mask preserves center area")
-    func workHeroFeatherMaskPreservesCenterArea() {
-        let metrics = WorkHeroFeatherMaskMetrics.resolve(size: CGSize(width: 820, height: 420), baseFadeWidth: 110)
-
-        #expect(metrics.centerRect.minX == metrics.fadeWidth)
-        #expect(metrics.centerRect.minY == metrics.fadeWidth)
-        #expect(metrics.centerRect.width > 0)
-        #expect(metrics.centerRect.height > 0)
-        #expect(metrics.centerRect.maxX < metrics.size.width)
-        #expect(metrics.centerRect.maxY < metrics.size.height)
+    @MainActor @Test("compact work hero centers the rendered pills and the narrow numeric fallback",
+                     arguments: [CGFloat(240), 700])
+    func compactWorkHeroCountPlacement(width: CGFloat) throws {
+        let header = WorkTopicHeaderMetrics(viewportHeight: 800, offset: 800)
+        var counts: CGRect?
+        let content = WorkTopicHeroControls(presentation: header) {
+            Color.clear
+            WorkTopicHeroCounts(characterCount: 100, bookCount: 802, localizer: .init(language: .zhHans))
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("compactHero")) } action: { counts = $0 }
+            Color.clear
+            Color.clear
+        }
+        .coordinateSpace(name: "compactHero")
+        .frame(width: width, height: header.height)
+        let host = NSHostingView(rootView: content)
+        host.frame = CGRect(x: 0, y: 0, width: width, height: header.height)
+        host.layoutSubtreeIfNeeded()
+        let deadline = Date(timeIntervalSinceNow: 1)
+        while counts == nil && Date() < deadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+        }
+        let visible = try #require(counts)
+        #expect(visible.height > 0 && visible.height < 34)
+        #expect(abs(visible.midY - header.height / 2) <= 0.5)
     }
 
     @Test("character detail hero keeps information centered with bottom breathing room")
@@ -1324,24 +1385,37 @@ struct AppPreferencesTests {
         #expect(defaultPlacement.offset(in: CGSize(width: 240, height: 360)) == .zero)
     }
 
-    @Test("work detail surface roles keep hero stronger than shelf")
-    func workDetailSurfaceRolesKeepHeroStrongerThanShelf() {
-        #expect(WorkDetailSurfaceRole.hero.cornerRadius > WorkDetailSurfaceRole.shelf.cornerRadius)
-        #expect(WorkDetailSurfaceRole.hero.strokeOpacity > WorkDetailSurfaceRole.shelf.strokeOpacity)
-        #expect(WorkDetailSurfaceRole.hero.shadowOpacity > WorkDetailSurfaceRole.shelf.shadowOpacity)
-        #expect(WorkDetailSurfaceRole.hero.shadowRadius > WorkDetailSurfaceRole.shelf.shadowRadius)
-        #expect(WorkDetailSurfaceRole.hero.shadowYOffset > WorkDetailSurfaceRole.shelf.shadowYOffset)
-    }
-
-    @Test("work character shelf visual state uses quiet placeholder without foreground")
-    func workCharacterShelfVisualStateUsesQuietPlaceholderWithoutForeground() {
-        let withForeground = WorkCharacterShelfVisualState.resolve(hasForegroundAsset: true)
-        let withoutForeground = WorkCharacterShelfVisualState.resolve(hasForegroundAsset: false)
-
-        #expect(!withForeground.showsPlaceholder)
-        #expect(withForeground.characterShadowOpacity > 0)
-        #expect(withoutForeground.showsPlaceholder)
-        #expect(withoutForeground.characterShadowOpacity == 0)
+    @MainActor @Test("work topic navigation keeps browsing state for nested details and discards popped topics")
+    func workTopicRestoresRouteState() {
+        let store = WorkDetailRouteScrollOffsetStore()
+        let work = LibraryRoute.workDetail(3)
+        let book = LibraryRoute.bookDetail("11")
+        let state = store.workState(for: work.id)
+        state.selection = .character(2)
+        state.prefersTitle = true
+        state.vertical.offset = 310
+        state.selector.offset = 48
+        state.shelf(for: 2).offset = 128
+        state.shelf(for: 4).offset = 280
+        store.pruneAfterPathChange(oldPath: [work, book], newPath: [work])
+        let restored = store.workState(for: work.id)
+        #expect(restored === state)
+        #expect(restored.prefersTitle)
+        #expect(restored.vertical.offset == 310)
+        #expect(restored.selector.offset == 48)
+        #expect(restored.selection == .character(2))
+        #expect(restored.shelf(for: 2).offset == 128)
+        #expect(restored.shelf(for: 4).offset == 280)
+        #expect(restored.shelf(for: 3).offset == 0)
+        store.pruneAfterPathChange(oldPath: [work], newPath: [])
+        let reopened = store.workState(for: work.id)
+        #expect(reopened.selection == nil)
+        #expect(!reopened.prefersTitle)
+        #expect(reopened.vertical.offset == 0)
+        #expect(reopened.selector.offset == 0)
+        #expect(reopened.shelf(for: 2).offset == 0)
+        store.clearAfterBaseDestinationChange()
+        #expect(store.workState(for: work.id) !== reopened)
     }
 
     @Test("delete book confirmation code is four digits and exact match only")

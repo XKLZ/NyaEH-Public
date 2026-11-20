@@ -4,18 +4,49 @@ import Foundation
 
 struct WorkDetail: Equatable, Sendable {
     var work: TagDisplaySummary
-    var sections: [WorkCharacterBookSection]
-    var hasCharacterIndexRelations: Bool = true
+    var sections: [WorkCharacterBookSection] {
+        didSet { overview = Overview(sections: sections) }
+    }
+    var hasCharacterIndexRelations: Bool
+    private var overview: Overview
 
-    var totalBookCount: Int {
-        Set(sections.flatMap { section in
-            section.books.map(\.id)
-        }).count
+    init(work: TagDisplaySummary, sections: [WorkCharacterBookSection], hasCharacterIndexRelations: Bool = true) {
+        self.work = work
+        self.sections = sections
+        self.hasCharacterIndexRelations = hasCharacterIndexRelations
+        overview = Overview(sections: sections)
     }
 
-    var characterCount: Int {
-        sections.filter { $0.character != nil }.count
+    var totalBookCount: Int { overview.totalBookCount }
+    var characterCount: Int { overview.characters.count }
+    var characters: [TagDisplaySummary] { overview.characters }
+    var unclassifiedBooks: [LibraryBook] { overview.unclassifiedIndex.map { sections[$0].books } ?? [] }
+
+    func section(for characterID: Tag.DatabaseID) -> WorkCharacterBookSection? {
+        overview.characterIndices[characterID].map { sections[$0] }
     }
+
+    private struct Overview: Equatable, Sendable {
+        let totalBookCount: Int
+        var characters: [TagDisplaySummary] = []
+        var characterIndices: [Tag.DatabaseID: Int] = [:]
+        var unclassifiedIndex: Int?
+
+        init(sections: [WorkCharacterBookSection]) {
+            var bookIDs: Set<LibraryBook.ID> = []
+            for (i, section) in sections.enumerated() {
+                bookIDs.formUnion(section.books.lazy.map(\.id))
+                if let character = section.character {
+                    characters.append(character)
+                    characterIndices[character.id] = i
+                } else {
+                    unclassifiedIndex = i
+                }
+            }
+            totalBookCount = bookIDs.count
+        }
+    }
+
 }
 
 struct WorkCharacterBookSection: Identifiable, Equatable, Sendable {

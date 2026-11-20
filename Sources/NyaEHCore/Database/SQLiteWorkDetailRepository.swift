@@ -15,14 +15,32 @@ final class SQLiteWorkDetailRepository: WorkDetailRepository {
         var indexed: Set<WorkCharacterPair>
     }
 
-    private static func claimContext(db: Database, tagID: Tag.DatabaseID) throws -> ClaimContext {
+    private enum ClaimBooks {
+        case withTag(Tag.DatabaseID)
+        case single(LibraryBook.DatabaseID)
+
+        var sql: String {
+            switch self {
+            case .withTag: "SELECT book_id FROM book_tags WHERE tag_id = ?"
+            case .single: "SELECT ?"
+            }
+        }
+
+        var arguments: StatementArguments {
+            switch self {
+            case .withTag(let id), .single(let id): [id]
+            }
+        }
+    }
+
+    private static func claimContext(db: Database, books: ClaimBooks) throws -> ClaimContext {
         let tagRows = try Row.fetchAll(db, sql: """
             SELECT book_tags.book_id, tags.id AS tag_id, tags.namespace, tags.name
             FROM book_tags
             JOIN tags ON tags.id = book_tags.tag_id
-            WHERE book_tags.book_id IN (SELECT book_id FROM book_tags WHERE tag_id = ?)
+            WHERE book_tags.book_id IN (\(books.sql))
               AND tags.namespace IN ('parody', 'character')
-            """, arguments: [tagID])
+            """, arguments: books.arguments)
         var works: [LibraryBook.DatabaseID: Set<Tag.DatabaseID>] = [:]
         var characters: [LibraryBook.DatabaseID: Set<Tag.DatabaseID>] = [:]
         var names: [Tag.DatabaseID: String] = [:]
@@ -47,13 +65,13 @@ final class SQLiteWorkDetailRepository: WorkDetailRepository {
             FROM book_tags
             JOIN tags ON tags.id = book_tags.tag_id
             WHERE tags.namespace = 'character'
-              AND book_tags.book_id IN (SELECT book_id FROM book_tags WHERE tag_id = ?)
+              AND book_tags.book_id IN (\(books.sql))
             """
         let indexedRows = try Row.fetchAll(db, sql: """
             SELECT DISTINCT parody_tag_id, character_tag_id
             FROM book_work_character_links
             WHERE character_tag_id IN (\(relevantCharacterSQL))
-            """, arguments: [tagID])
+            """, arguments: books.arguments)
         let indexed = Set(indexedRows.map { row in
             WorkCharacterPair(workID: row["parody_tag_id"], characterID: row["character_tag_id"])
         })
@@ -61,7 +79,7 @@ final class SQLiteWorkDetailRepository: WorkDetailRepository {
             SELECT parody_tag_id, character_tag_id, decision
             FROM work_character_decisions
             WHERE character_tag_id IN (\(relevantCharacterSQL))
-            """, arguments: [tagID])
+            """, arguments: books.arguments)
         var confirmed: Set<WorkCharacterPair> = []
         var excluded: Set<WorkCharacterPair> = []
         for row in decisionRows {
@@ -72,8 +90,8 @@ final class SQLiteWorkDetailRepository: WorkDetailRepository {
         let suppressionRows = try Row.fetchAll(db, sql: """
             SELECT book_id, parody_tag_id, character_tag_id
             FROM book_work_character_suppressions
-            WHERE book_id IN (SELECT book_id FROM book_tags WHERE tag_id = ?)
-            """, arguments: [tagID])
+            WHERE book_id IN (\(books.sql))
+            """, arguments: books.arguments)
         var suppressed: [LibraryBook.DatabaseID: Set<WorkCharacterPair>] = [:]
         for row in suppressionRows {
             let bookID: LibraryBook.DatabaseID = row["book_id"]
@@ -104,7 +122,7 @@ final class SQLiteWorkDetailRepository: WorkDetailRepository {
 
     func fetchWorkCharacterCandidates(parodyTagID: Tag.DatabaseID, languageCode: String?) throws -> [WorkCharacterCandidate] {
         try dbQueue.read { db in
-            let context = try Self.claimContext(db: db, tagID: parodyTagID)
+            let context = try Self.claimContext(db: db, books: .withTag(parodyTagID))
             let rows = try Row.fetchAll(db, sql: """
                 SELECT characters.id,
                        decisions.decision
@@ -139,6 +157,40 @@ final class SQLiteWorkDetailRepository: WorkDetailRepository {
                     }
                 )
             }
+        }
+    }
+
+    func addCharacterTag(to bookID: LibraryBook.DatabaseID, pair: WorkCharacterPair) throws -> WorkCharacterTagAddition {
+        try dbQueue.write { db in
+            try Task.checkCancellation()
+            try Self.validate(pair: pair, db: db)
+            var book = try SQLiteLibraryBookRepository.writableBook(bookID, in: db)
+            let belongsToWork = try Bool.fetchOne(db, sql: """
+                SELECT EXISTS(SELECT 1 FROM book_tags WHERE book_id = ? AND tag_id = ?)
+                """, arguments: [bookID, pair.workID])
+            guard belongsToWork == true else { throw LibraryDeletionError.bookUnavailable }
+            guard let rawValue = try String.fetchOne(db, sql: "SELECT raw_value FROM tags WHERE id = ?", arguments: [pair.characterID]) else {
+                throw NyaEHError.databaseInvariantViolation("Character tag no longer exists.")
+            }
+
+            // Keep unrelated raw strings (including tags unknown to the metadata editor) verbatim.
+            var rawTags = try JSONDecoder().decode([String].self, from: Data(book.tags.utf8))
+            let needsRawTag = !TagParser.parseJSON(book.tags).contains { $0.rawValue == rawValue }
+            if needsRawTag {
+                rawTags.append(rawValue)
+                book.tags = String(decoding: try JSONEncoder().encode(rawTags), as: UTF8.self)
+                book.updatedAt = Timestamp.nowMilliseconds()
+                try db.execute(sql: "UPDATE library_books SET tags = ?, updated_at = ? WHERE id = ?",
+                               arguments: [book.tags, book.updatedAt, bookID])
+            }
+            try db.execute(sql: "INSERT OR IGNORE INTO book_tags (book_id, tag_id) VALUES (?, ?)",
+                           arguments: [bookID, pair.characterID])
+            let addedToIndex = db.changesCount > 0
+            try SQLiteWorkCharacterRepository.insertMissingLinks(for: bookID, db: db)
+            let addedEvidence = db.changesCount > 0
+            let context = try Self.claimContext(db: db, books: .single(bookID))
+            return WorkCharacterTagAddition(book: book, didChange: needsRawTag || addedToIndex || addedEvidence,
+                                            isClassified: context.claims[bookID]?[pair] != nil)
         }
     }
 
@@ -198,7 +250,7 @@ final class SQLiteWorkDetailRepository: WorkDetailRepository {
             guard let work = try fetchTagSummary(db: db, tagID: parodyTagID, expectedNamespace: "parody", languageCode: languageCode) else {
                 return nil
             }
-            let context = try Self.claimContext(db: db, tagID: parodyTagID)
+            let context = try Self.claimContext(db: db, books: .withTag(parodyTagID))
 
             let rows = try Row.fetchAll(
                 db,
@@ -259,7 +311,7 @@ final class SQLiteWorkDetailRepository: WorkDetailRepository {
             guard let character = try fetchTagSummary(db: db, tagID: characterTagID, expectedNamespace: "character", languageCode: languageCode) else {
                 return nil
             }
-            let context = try Self.claimContext(db: db, tagID: characterTagID)
+            let context = try Self.claimContext(db: db, books: .withTag(characterTagID))
 
             let rows = try Row.fetchAll(
                 db,

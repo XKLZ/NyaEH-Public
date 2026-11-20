@@ -16,6 +16,12 @@ enum WorkCharacterManualDecision: String, Sendable {
     case excluded
 }
 
+struct WorkCharacterTagAddition: Sendable {
+    let book: LibraryBook
+    let didChange: Bool
+    let isClassified: Bool
+}
+
 struct WorkCharacterCandidate: Identifiable, Sendable {
     let character: TagDisplaySummary
     let decision: WorkCharacterManualDecision?

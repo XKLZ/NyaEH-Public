@@ -12,6 +12,7 @@ enum FocusAppearanceMode: Equatable {
 
 enum FocusAppearanceInput: Equatable {
     case tab
+    case directionalNavigation
     case mouseDown(onEditableText: Bool)
     case textEditingBegan
     case textEditingEnded
@@ -35,7 +36,7 @@ struct FocusAppearanceState: Equatable {
 
     mutating func receive(_ input: FocusAppearanceInput) {
         switch input {
-        case .tab:
+        case .tab, .directionalNavigation:
             mode = .keyboardNavigation
         case .mouseDown(let onEditableText):
             mode = onEditableText ? .textEditing : .browsing
@@ -101,6 +102,7 @@ private struct ManagedFocusAppearance: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .environment(manager)
             .focusEffectDisabled(manager.hidesDefaultFocusEffect)
             .environment(\.browsingFocusEffectHidden, manager.hidesDefaultFocusEffect)
             .background {

@@ -157,6 +157,12 @@ struct TagCategoryView: View {
             resetPresentationPage()
         }
         .onChange(of: store.catalog.tagSummaryRevision) { _, _ in
+            if isActive { rebuildPresentation() }
+        }
+        .onChange(of: isActive) { _, active in
+            guard active else { return }
+            // Detail routes keep this page mounted. An edit can invalidate its tag counts while covered.
+            store.catalog.loadTagSummaries(for: category, isTagTranslationEnabled: isTagTranslationEnabled)
             rebuildPresentation()
         }
         .onChange(of: page) { _, _ in

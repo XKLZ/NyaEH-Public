@@ -205,8 +205,8 @@ struct HomeShelfSection: View {
             .padding(.trailing, trailingInset)
         }
         .scrollPosition($scrollPosition)
-        .onScrollGeometryChange(for: HomeShelfScrollState.self) { geometry in
-            HomeShelfScrollState(geometry: geometry)
+        .onScrollGeometryChange(for: ShelfScrollGeometry.self) { geometry in
+            ShelfScrollGeometry(geometry: geometry)
         } action: { _, newState in
             guard newState.maxOffsetX > 0 else {
                 edges = HomeShelfEdges()
@@ -243,7 +243,7 @@ struct HomeShelfSection: View {
     }
 }
 
-private struct HomeShelfScrollState: Equatable {
+struct ShelfScrollGeometry: Equatable {
     private static let edgeTolerance: CGFloat = 1
 
     var offsetX: CGFloat = 0
@@ -279,7 +279,7 @@ private struct HomeShelfEdges: Equatable {
 
 // Scroll callbacks update this reference without invalidating the shelf or its cards.
 final class HomeShelfPosition {
-    fileprivate var geometry = HomeShelfScrollState()
+    fileprivate var geometry = ShelfScrollGeometry()
 }
 
 final class HomeShelfPositions {

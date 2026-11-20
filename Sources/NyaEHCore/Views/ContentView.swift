@@ -756,6 +756,7 @@ private struct LibraryContentView: View {
             case .workDetail(let tagID):
                 WorkDetailTransitionShell(
                     detail: store.workDetail(tagID: tagID),
+                    browsing: routeScrollOffsetStore.workState(for: route.id),
                     fallbackTitle: localizer.string(.detailWorks),
                     localizer: localizer
                 )
@@ -847,10 +848,9 @@ private struct LibraryContentView: View {
                 tagID: tagID,
                 isTagTranslationEnabled: isTagTranslationEnabled,
                 titleDisplayMode: titleDisplayMode,
-                initialScrollOffset: routeScrollOffsetStore.offset(for: route.id),
+                browsing: routeScrollOffsetStore.workState(for: route.id),
                 usesExternalTransitionShell: true,
                 localizer: localizer,
-                onScrollOffsetChange: { routeScrollOffsetStore.setOffset($0, for: route.id) },
                 onSelectBook: { book in openBook(book, source: .workDetail) },
                 onSelectCharacter: { character in openRelatedTopic(.characterDetail(character.id)) },
                 onSearchWork: { tag in

@@ -97,15 +97,8 @@ enum NavigationPerformanceTracer {
         logger.info("workDetail content ready tag=\(tagID, privacy: .public) sections=\(sectionCount, privacy: .public)")
     }
 
-    static func workDetailSectionUnlocked(
-        tagID: Tag.DatabaseID,
-        triggerIndex: Int,
-        totalCount: Int,
-        unlockedCount: Int
-    ) {
-        logger.info(
-            "workDetail section unlock tag=\(tagID, privacy: .public) trigger=\(triggerIndex, privacy: .public) unlocked=\(unlockedCount, privacy: .public)/\(totalCount, privacy: .public)"
-        )
+    static func workTopicShelfVisibility(workID: Tag.DatabaseID, characterID: Tag.DatabaseID, visible: Bool) {
+        logger.info("work topic shelf work=\(workID, privacy: .public) character=\(characterID, privacy: .public) visible=\(visible, privacy: .public)")
     }
 
     static func bookDetailDidAppear(bookID: String) {

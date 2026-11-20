@@ -679,9 +679,16 @@ enum L10nKey: String, CaseIterable, Sendable {
     case workDetailNoBooks
     case workDetailNoBooksDescription
     case workDetailNoIntro
+    case workTopicSwitchTitle
     case workDetailOpenCharacter
     case workDetailSearchWork
     case workDetailUntaggedCharacter
+    case workTopicUnclassified
+    case workTopicAddCharacterTag
+    case workTopicSearchCharacters
+    case workTopicThisWorkCharacters
+    case workTopicLibraryCharacters
+    case workTopicTagNeedsConfirmation
     case workCharacterManage
     case workCharacterDone
     case workCharacterConfirmed

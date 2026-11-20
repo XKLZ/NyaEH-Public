@@ -310,7 +310,7 @@ final class SQLiteLibraryBookRepository: LibraryBookRepository {
         }
     }
 
-    private static func writableBook(_ id: LibraryBook.DatabaseID?, in db: Database) throws -> LibraryBook {
+    static func writableBook(_ id: LibraryBook.DatabaseID?, in db: Database) throws -> LibraryBook {
         guard let id else { throw NyaEHError.bookHasNoID }
         guard let row = try Row.fetchOne(db, sql: """
             SELECT * FROM library_books WHERE id = ? AND NOT EXISTS (
