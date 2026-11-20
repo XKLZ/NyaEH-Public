@@ -583,6 +583,7 @@ enum L10nKey: String, CaseIterable, Sendable {
     case storage
     case storageMaintenance
     case backupAndRestore
+    case backupLocation, backupChoose, backupLocal, backupImages, backupHasImages, backupDBOnly, backupManaged, backupLegacy, backupTotal, backupDue, backupRemovePending, backupDeleteFormat, backupAutoKind, backupDaily, backupWeekly, backupMigration, backupRepair, backupImport, backupRestore, backupEmpty
     case backupDescription
     case exportBackup
     case dataHealthCheck

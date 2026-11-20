@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -25,6 +26,25 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(s['cleanup'], 'complete')
         self.assertFalse(Path(s['work']).exists())
         self.assertEqual(sentinel.read_text(), 'untouched')
+    def test_backup_trash_requires_an_exact_session_tree(self):
+        s = v.new_session(False)
+        source = Path(s['data']) / 'Backups' / 'automatic-test.nyaehbackup'
+        moved = self.root / '.Trash' / source.name
+        moved.mkdir(parents=True)
+        (moved / 'manifest.json').write_bytes(b'synthetic')
+        record = v.owned_identity(moved) | dict(session=s['id'], source=str(source), backupFiles={
+            '': 'directory', '/manifest.json': hashlib.sha256(b'synthetic').hexdigest()})
+        folder = Path(s['data']) / 'trash-records'
+        folder.mkdir()
+        (folder / 'one.json').write_text(json.dumps(record))
+        other = moved / 'unexpected'
+        other.write_text('preserve')
+        self.assertTrue(v.clean_trash(s))
+        self.assertTrue(other.is_file())
+        other.unlink()
+        self.assertEqual(v.clean_trash(s), [])
+        self.assertFalse(moved.exists())
+
     def test_resource_replacement_is_not_deleted(self):
         s = v.new_session(False)
         s['resources'][0]['inode'] += 1

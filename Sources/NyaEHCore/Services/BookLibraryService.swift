@@ -31,7 +31,7 @@ struct BookLibraryService: @unchecked Sendable {
     private let semanticTitleVectorIndexService: SemanticTitleVectorIndexService?
     private let coverFeatureQueryGenerator: CoverFeatureQueryGenerating
     private let databaseManager: DatabaseManager?
-    private let backupService: LibraryBackupService?
+    let backupService: LibraryBackupService?
     private let fileStatusService: BookFileStatusService
     private let scannerService: LibraryScannerService
     private let metadataFetchService: GalleryMetadataFetchService
@@ -256,20 +256,6 @@ struct BookLibraryService: @unchecked Sendable {
             throw NyaEHError.databaseMaintenanceUnavailable
         }
         try databaseManager.vacuum()
-    }
-
-    func createAutomaticBackupsIfNeeded() throws {
-        try backupService?.createAutomaticBackupsIfNeeded()
-    }
-
-    func exportBackup(to url: URL) throws -> LibraryBackupResult {
-        guard let backupService else { throw NyaEHError.databaseMaintenanceUnavailable }
-        return try backupService.export(to: url)
-    }
-
-    func restoreBackup(from url: URL) throws -> LibraryBackupResult {
-        guard let backupService else { throw NyaEHError.databaseMaintenanceUnavailable }
-        return try backupService.restore(from: url)
     }
 
     func dataHealthCheck() throws -> DataHealthReport {
@@ -857,7 +843,9 @@ struct BookLibraryService: @unchecked Sendable {
                 throw LibraryDeletionError.commitPending
             }
         }
-        return finishDeletionCleanup(operation, repository: deletion)
+        let result = finishDeletionCleanup(operation, repository: deletion)
+        try? backupService?.reconcile()
+        return result
     }
 
     private func finishDeletionCleanup(_ operation: LibraryDeletionOperation, repository: any LibraryDeletionRepository) -> LibraryDeletionResult {
@@ -1223,7 +1211,9 @@ struct BookLibraryService: @unchecked Sendable {
         isCancelled: @escaping @Sendable () -> Bool = { false }
     ) throws -> LibraryScanResult {
         try TestRuntime.validateSourceRoot(rootURL)
-        return try scannerService.scan(rootURL: rootURL, progress: progress, isCancelled: isCancelled)
+        let result = try scannerService.scan(rootURL: rootURL, progress: progress, isCancelled: isCancelled)
+        try? backupService?.reconcile()
+        return result
     }
 
     func rescanCover(for book: LibraryBook) throws -> LibraryBook {
@@ -1251,7 +1241,6 @@ struct BookLibraryService: @unchecked Sendable {
         guard let externalImportService else {
             throw NyaEHError.importUnavailable
         }
-        _ = try backupService?.createInternalBackup(kind: .preImport)
         return try externalImportService.importExhentaiMangaManager(from: folderURL, progress: progress)
     }
 

@@ -939,39 +939,12 @@ private struct LibrarySettingsPane: View {
 private struct StorageMaintenanceSettingsPane: View {
     @Bindable var store: MaintenanceStore
     let localizer: AppLocalizer
-    @State private var pendingRestoreURL: URL?
-    @State private var showingRestoreConfirmation = false
     @State private var showingRepairConfirmation = false
     @State private var showingVacuumConfirmation = false
 
     var body: some View {
         Form {
-            Section(localizer.string(.backupAndRestore)) {
-                Text(localizer.string(.backupDescription))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                HStack {
-                    Button(action: exportBackup) {
-                        Label(localizer.string(.exportBackup), systemImage: "square.and.arrow.up")
-                    }
-                    Button(action: chooseRestorePackage) {
-                        Label(localizer.string(.importFromThisApp), systemImage: "square.and.arrow.down")
-                    }
-                }
-                .disabled(store.catalog.isManagingBackup)
-
-                if store.catalog.isManagingBackup {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                if let message = store.catalog.backupMessage {
-                    Text(message)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-            }
+            BackupSettingsSection(store: store, localizer: localizer)
 
             Section(localizer.string(.dataHealthCheck)) {
                 HStack {
@@ -1026,17 +999,6 @@ private struct StorageMaintenanceSettingsPane: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .confirmationDialog(localizer.string(.confirmRestore), isPresented: $showingRestoreConfirmation) {
-            Button(localizer.string(.restore), role: .destructive) {
-                if let pendingRestoreURL {
-                    store.catalog.restoreBackup(from: pendingRestoreURL, localizer: localizer)
-                }
-                pendingRestoreURL = nil
-            }
-            Button(localizer.string(.cancel), role: .cancel) { pendingRestoreURL = nil }
-        } message: {
-            Text(localizer.string(.restoreWarning))
-        }
         .confirmationDialog(localizer.string(.repairDerivedData), isPresented: $showingRepairConfirmation) {
             Button(localizer.string(.repair)) { store.catalog.repairDerivedData() }
             Button(localizer.string(.cancel), role: .cancel) {}
@@ -1051,25 +1013,7 @@ private struct StorageMaintenanceSettingsPane: View {
         }
     }
 
-    private func exportBackup() {
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = "NyaEH-Backup.\(LibraryBackupService.packageExtension)"
-        panel.canCreateDirectories = true
-        panel.prompt = localizer.string(.exportBackup)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        store.catalog.exportBackup(to: url, localizer: localizer)
-    }
 
-    private func chooseRestorePackage() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = localizer.string(.restore)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        pendingRestoreURL = url
-        showingRestoreConfirmation = true
-    }
 }
 
 private struct MetadataSettingsPane: View {

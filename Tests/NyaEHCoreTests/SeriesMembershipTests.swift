@@ -103,9 +103,9 @@ struct SeriesMembershipTests {
                 VALUES (1, 'add_to_collection', ?, 90, ?, 'pending', 1, 1)
                 """, arguments: [series, "collection-add:\(series):\(translation)"])
             try db.execute(sql: "INSERT INTO collection_recommendation_members VALUES (1, ?, 0)", arguments: [translation])
-            try db.execute(sql: "DELETE FROM grdb_migrations WHERE identifier = 'v22_version_series_membership'")
+            try db.execute(sql: "DELETE FROM grdb_migrations WHERE identifier IN ('v22_version_series_membership', 'v23_backup_membership_event')")
         }
-        #expect(LibraryBackupService.currentSchemaVersion == 22)
+        #expect(LibraryBackupService.currentSchemaVersion == 23)
         let upgraded = try DatabaseManager(path: fixture.database.path)
         let books = SQLiteLibraryBookRepository(dbQueue: upgraded.dbQueue)
         #expect(try books.fetch(id: translation)?.collectionOrder == 2)
@@ -174,7 +174,11 @@ struct SeriesMembershipTests {
         var books: SQLiteLibraryBookRepository { .init(dbQueue: database.dbQueue) }
         var collections: SQLiteCollectionRepository { .init(dbQueue: database.dbQueue) }
         var groups: SQLiteVersionGroupRepository { .init(dbQueue: database.dbQueue) }
-        var backups: LibraryBackupService { .init(databaseManager: database, appDataURL: root) }
+        var backups: LibraryBackupService {
+            .init(databaseManager: database, appDataURL: root, trash: { url in
+                try FileManager.default.moveItem(at: url, to: root.appendingPathComponent("trashed-" + url.lastPathComponent))
+            })
+        }
 
         func series(_ name: String) throws -> Int64 {
             try #require(collections.insert(BookCollection(name: name)).databaseID)

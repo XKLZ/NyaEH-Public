@@ -4,6 +4,7 @@ import Foundation
 
 enum LibraryBackupKind: String, Codable, Sendable {
     case manual
+    case automatic
     case daily
     case weekly
     case preImport
@@ -23,6 +24,7 @@ struct LibraryBackupManifest: Codable, Equatable, Sendable {
     var kind: LibraryBackupKind
     var includesTagAssets: Bool
     var excludedAssets: [String]
+    var backupID: UUID?
 }
 
 struct LibraryBackupResult: Equatable, Sendable {
@@ -49,4 +51,30 @@ struct DataHealthReport: Equatable, Sendable {
     var repairedIssueCount: Int = 0
 
     var isHealthy: Bool { issues.isEmpty }
+}
+
+enum BackupCommand: Sendable {
+    case export(URL, images: Bool)
+    case restoreFile(URL)
+    case restoreEntry(UUID)
+    case delete(Set<UUID>)
+    case destination(URL?)
+
+    var isRestore: Bool {
+        switch self {
+        case .restoreFile, .restoreEntry: true
+        default: false
+        }
+    }
+
+    func perform(using service: LibraryBackupService) throws -> String? {
+        switch self {
+        case let .export(url, images): return try service.export(to: url, includeImages: images).packageURL.path
+        case let .restoreFile(url): _ = try service.restore(from: url)
+        case let .restoreEntry(id): _ = try service.restore(id: id)
+        case let .delete(ids): try service.delete(ids)
+        case let .destination(url): try service.chooseLocation(url)
+        }
+        return nil
+    }
 }

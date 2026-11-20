@@ -21,7 +21,8 @@ struct ExternalLibraryImportServiceTests {
 
         let result = try context.importService.importExhentaiMangaManager(from: context.fixtureURL)
 
-        #expect(FileManager.default.fileExists(atPath: result.backupURL.path))
+        #expect(try BackupInventory.manifest(result.backupURL).kind == .preImport)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: result.backupURL.deletingLastPathComponent().path) == [result.backupURL.lastPathComponent])
         #expect(result.metadataImported >= 1)
         #expect(result.booksUpdated >= 1)
 
@@ -188,6 +189,14 @@ struct ExternalLibraryImportServiceTests {
         )
     }
 
+    @Test("Unreadable external collections do not create a recovery point")
+    func rejectsDamagedInputBeforeBackup() throws {
+        let c = try makeContext()
+        try Data("invalid JSON".utf8).write(to: c.fixtureURL.appendingPathComponent("collectionList.json"))
+        #expect(throws: Error.self) { try c.importService.importExhentaiMangaManager(from: c.fixtureURL) }
+        #expect(!FileManager.default.fileExists(atPath: c.directory.appendingPathComponent("AppData/Backups").path))
+    }
+
     private func makeContext() throws -> ImportRepositoryContext {
         let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -207,8 +216,7 @@ struct ExternalLibraryImportServiceTests {
             versionGroups: SQLiteVersionGroupRepository(dbQueue: database.dbQueue),
             importService: ExternalLibraryImportService(
                 dbQueue: database.dbQueue,
-                databasePath: database.path,
-                appDataURL: appDataURL
+                backups: LibraryBackupService(databaseManager: database, appDataURL: appDataURL)
             )
         )
     }

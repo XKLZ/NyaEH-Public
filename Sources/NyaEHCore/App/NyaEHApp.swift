@@ -1,14 +1,19 @@
 // Shared scene: validate test host identity before constructing any persistent dependency.
 import SwiftUI
+import Combine
 
 @MainActor
 private final class NyaEHSceneDependencies {
     let appModel = NyaEHAppModel()
     let preferences = AppPreferences()
     let localHighlightServer = LocalHighlightServerController()
+    private var volumeWatcher: AnyCancellable?
     let updateManager: UpdateManager?
 
     init(runtime: TestRuntime?) {
+        volumeWatcher = NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didMountNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak appModel] _ in appModel?.catalog.reconcileBackups() }
         appModel.catalog.advancedSearchShowsIndividualBooks = preferences.isAdvancedSearchCollectionMembersExpanded
         let publicKey = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String ?? ""
         updateManager = runtime == nil && Bundle.main.bundleIdentifier == "com.gazelee.NyaEH" && !publicKey.isEmpty

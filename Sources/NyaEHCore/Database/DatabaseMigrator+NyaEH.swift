@@ -121,6 +121,25 @@ extension DatabaseMigrator {
             try SeriesMembership.repair(db)
         }
 
+        // The event is committed (or rolled back) with the actual membership change.
+        // Keeping its time lets a relaunch distinguish day-six edits from a due offline backup.
+        migrator.registerMigration("v23_backup_membership_event") { db in
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS backup_membership_event (
+                    id INTEGER PRIMARY KEY CHECK (id = 1), changed_at INTEGER NOT NULL
+                );
+                """)
+            for operation in ["INSERT", "DELETE"] {
+                try db.execute(sql: """
+                    CREATE TRIGGER IF NOT EXISTS backup_membership_\(operation)
+                    AFTER \(operation) ON library_books BEGIN
+                        INSERT INTO backup_membership_event VALUES (1, CAST(unixepoch('subsec') * 1000 AS INTEGER))
+                        ON CONFLICT(id) DO UPDATE SET changed_at = excluded.changed_at;
+                    END;
+                    """)
+            }
+        }
+
         return migrator
     }
 }

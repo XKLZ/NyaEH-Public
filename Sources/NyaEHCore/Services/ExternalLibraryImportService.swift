@@ -38,19 +38,16 @@ enum ExternalLibraryImportSource: String, CaseIterable, Identifiable, Sendable {
 
 final class ExternalLibraryImportService {
     private let dbQueue: any DatabaseWriter
-    private let databasePath: String
-    private let appDataURL: URL
+    private let backups: LibraryBackupService
     private let fileManager: FileManager
 
     init(
         dbQueue: any DatabaseWriter,
-        databasePath: String,
-        appDataURL: URL,
+        backups: LibraryBackupService,
         fileManager: FileManager = .default
     ) {
         self.dbQueue = dbQueue
-        self.databasePath = databasePath
-        self.appDataURL = appDataURL
+        self.backups = backups
         self.fileManager = fileManager
     }
 
@@ -64,14 +61,20 @@ final class ExternalLibraryImportService {
         let source = ExhentaiMangaManagerSource(folderURL: folderURL)
         try validate(source: source)
 
-        progress(.init(phase: "Creating database backup", completed: 1, total: 7))
-        let backupURL = try createBackup()
-
-        progress(.init(phase: "Reading source databases", completed: 2, total: 7))
+        progress(.init(phase: "Reading source databases", completed: 1, total: 7))
         let mangas = try loadMangas(from: source.databaseURL)
         let metadataRows = try loadMetadata(from: source.metadataURL)
         let collections = try loadCollections(from: source.collectionURL)
 
+        progress(.init(phase: "Creating database backup", completed: 2, total: 7))
+        return try backups.protectedOperation(.preImport) { snapshot in
+            try importValidated(mangas: mangas, metadataRows: metadataRows, collections: collections,
+                                backupURL: snapshot.packageURL, progress: progress)
+        }
+    }
+
+    private func importValidated(mangas: [ExternalManga], metadataRows: [ExternalMetadata], collections: [ExternalCollection],
+                                 backupURL: URL, progress: @escaping @Sendable (ExternalLibraryImportProgress) -> Void) throws -> ExternalLibraryImportResult {
         progress(.init(phase: "Indexing hashes", completed: 3, total: 7))
         let sourceDuplicateHashes = duplicatedHashes(in: mangas.map(\.hash))
         let metadataByHash = Dictionary(
@@ -171,25 +174,6 @@ final class ExternalLibraryImportService {
             }
         }
 
-        _ = try Data(contentsOf: source.collectionURL)
-    }
-
-    private func createBackup() throws -> URL {
-        let backupDirectory = appDataURL.appendingPathComponent("Backups", isDirectory: true)
-        try fileManager.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
-
-        let timestamp = Self.backupTimestampFormatter.string(from: Date())
-        let backupURL = backupDirectory.appendingPathComponent("NyaEH-\(timestamp).sqlite")
-        let backupQueue = try DatabaseQueue(path: backupURL.path)
-        try dbQueue.backup(to: backupQueue)
-
-        if try backupQueue.read({ db in try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM sqlite_master") ?? 0 }) == 0,
-           fileManager.fileExists(atPath: databasePath) {
-            try? fileManager.removeItem(at: backupURL)
-            try fileManager.copyItem(atPath: databasePath, toPath: backupURL.path)
-        }
-
-        return backupURL
     }
 
     private func loadMangas(from url: URL) throws -> [ExternalManga] {
@@ -600,14 +584,7 @@ final class ExternalLibraryImportService {
         return (Int64(urlString[idRange]), String(urlString[tokenRange]))
     }
 
-    private static let backupTimestampFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        return formatter
-    }()
+
 }
 
 private struct ExhentaiMangaManagerSource {

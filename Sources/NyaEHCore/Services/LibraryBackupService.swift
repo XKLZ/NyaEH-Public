@@ -7,7 +7,7 @@ struct LibraryBackupService: @unchecked Sendable {
     static let packageExtension = "nyaehbackup"
     static let databaseFilename = "NyaEH.sqlite"
     static let manifestFilename = "manifest.json"
-    static let currentSchemaVersion = 22
+    static let currentSchemaVersion = 23
 
     private let databaseManager: DatabaseManager
     private let appDataURL: URL
@@ -15,97 +15,230 @@ struct LibraryBackupService: @unchecked Sendable {
     private let semanticTitleVectorRepository: SemanticTitleVectorRepository?
     private let fileManager: FileManager
 
+    private let trash: (URL) throws -> Void
+
     init(
         databaseManager: DatabaseManager,
         appDataURL: URL,
         coverVectorRepository: CoverVectorRepository? = nil,
         semanticTitleVectorRepository: SemanticTitleVectorRepository? = nil,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        trash: @escaping (URL) throws -> Void = BackupPackageTrash.move
     ) {
         self.databaseManager = databaseManager
         self.appDataURL = appDataURL
         self.coverVectorRepository = coverVectorRepository
         self.semanticTitleVectorRepository = semanticTitleVectorRepository
+        self.trash = trash
         self.fileManager = fileManager
     }
 
-    func export(to packageURL: URL, kind: LibraryBackupKind = .manual) throws -> LibraryBackupResult {
-        try createPackage(at: packageURL, kind: kind, replacingExisting: true)
-    }
-
-    func createInternalBackup(kind: LibraryBackupKind, now: Date = Date()) throws -> LibraryBackupResult {
-        let directory = appDataURL.appendingPathComponent("Backups", isDirectory: true)
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let stamp: String
-        switch kind {
-        case .daily: stamp = Self.dayFormatter.string(from: now)
-        case .weekly: stamp = Self.weekFormatter.string(from: now)
-        default: stamp = Self.timestampFormatter.string(from: now)
-        }
-        let packageURL = directory.appendingPathComponent("\(kind.rawValue)-\(stamp).\(Self.packageExtension)", isDirectory: true)
-        let result = try createPackage(at: packageURL, kind: kind, replacingExisting: false)
-        try pruneInternalBackups(in: directory)
-        return result
-    }
-
-    func createAutomaticBackupsIfNeeded(now: Date = Date()) throws {
-        let directory = appDataURL.appendingPathComponent("Backups", isDirectory: true)
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
-        let dayKey = Self.dayFormatter.string(from: now)
-        if !names.contains(where: { $0.hasPrefix("daily-\(dayKey)") }) {
-            _ = try createInternalBackup(kind: .daily, now: now)
-        }
-        let weekKey = Self.weekFormatter.string(from: now)
-        if !names.contains(where: { $0.hasPrefix("weekly-\(weekKey)") }) {
-            _ = try createInternalBackup(kind: .weekly, now: now)
+    func export(to url: URL, includeImages: Bool = false) throws -> LibraryBackupResult {
+        guard url.pathExtension == Self.packageExtension else { throw LibraryBackupError.invalidPackage }
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        return try BackupInventory.access(root: appDataURL) { inventory in
+            guard !inventory.containsDestination(url) else { throw LibraryBackupError.destinationExists }
+            let stage = url.deletingLastPathComponent().appendingPathComponent(".export-" + UUID().uuidString)
+            defer { try? fileManager.removeItem(at: stage) }
+            let manifest = try writePackage(at: stage, kind: .manual, includeImages: includeImages)
+            if fileManager.fileExists(atPath: url.path) {
+                _ = try validate(packageURL: url)
+                _ = try fileManager.replaceItemAt(url, withItemAt: stage)
+            } else { try fileManager.moveItem(at: stage, to: url) }
+            return .init(packageURL: url, manifest: manifest)
         }
     }
 
-    func validate(packageURL: URL) throws -> LibraryBackupManifest {
-        let manifestURL = packageURL.appendingPathComponent(Self.manifestFilename)
-        let databaseURL = databaseURL(in: packageURL)
-        let manifest = try JSONDecoder().decode(LibraryBackupManifest.self, from: Data(contentsOf: manifestURL))
-        guard manifest.formatVersion == LibraryBackupManifest.formatVersion,
-              manifest.schemaVersion <= Self.currentSchemaVersion,
-              fileManager.fileExists(atPath: databaseURL.path) else {
+    private func publish(_ kind: LibraryBackupKind, in inventory: BackupInventory, now: Date? = nil,
+                         schema: Int = Self.currentSchemaVersion) throws -> LibraryBackupResult {
+        try inventory.publish(kind: kind, now: now) { url, id, created in
+            try writePackage(at: url, kind: kind, id: id, now: created, schema: schema)
+        }
+    }
+
+    func protectedOperation<T>(_ kind: LibraryBackupKind, schema: Int = Self.currentSchemaVersion,
+                               perform: (LibraryBackupResult) throws -> T) throws -> T {
+        try BackupInventory.access(root: appDataURL) { inventory in
+            let snapshot = try publish(kind, in: inventory, schema: schema)
+            defer { try? inventory.rotate(using: trash) }
+            return try perform(snapshot)
+        }
+    }
+
+    private func isDue(_ inventory: BackupInventory) throws -> Bool {
+        if inventory.pendingAutomatic { return true }
+        let changed = try databaseManager.dbQueue.read { db in
+            try Int64.fetchOne(db, sql: "SELECT changed_at FROM backup_membership_event WHERE id = 1")
+        }
+        guard let changed else { return false }
+        guard let last = inventory.lastAutomatic else { return true }
+        return changed >= Int64((last.timeIntervalSince1970 * 1000).rounded()) + 168 * 3600 * 1000
+    }
+
+    func reconcile(now: Date? = nil) throws {
+        try BackupInventory.access(root: appDataURL) { inventory in
+            if try isDue(inventory) {
+                try inventory.markPending()
+                do {
+                    _ = try publish(.automatic, in: inventory, now: now)
+                    try inventory.setIssue(nil)
+                } catch {
+                    try inventory.setIssue(error.localizedDescription)
+                    throw error
+                }
+            }
+            try inventory.rotate(using: trash)
+        }
+    }
+
+    func listing() throws -> BackupListing {
+        try BackupInventory.access(root: appDataURL) { try $0.listing(pending: isDue($0)) }
+    }
+
+    func chooseLocation(_ url: URL?) throws {
+        try BackupInventory.access(root: appDataURL) { try $0.choose(url) }
+        try reconcile()
+    }
+
+    func delete(_ ids: Set<UUID>) throws {
+        try BackupInventory.access(root: appDataURL) { inventory in
+            var failures: [String] = []
+            for id in ids {
+                do { try inventory.trash(id, using: trash) }
+                catch { failures.append(error.localizedDescription) }
+            }
+            try inventory.rotate(using: trash)
+            if !failures.isEmpty {
+                throw NSError(domain: "NyaEH.Backups", code: 1, userInfo: [
+                    NSLocalizedDescriptionKey: failures.joined(separator: "\n")
+                ])
+            }
+        }
+    }
+
+    func validate(packageURL: URL) throws -> LibraryBackupManifest { try Self.validatePackage(packageURL, scratchRoot: appDataURL) }
+
+    static func validatePackage(_ packageURL: URL, scratchRoot: URL) throws -> LibraryBackupManifest {
+        let manifest = try BackupInventory.manifest(packageURL)
+        guard manifest.formatVersion == LibraryBackupManifest.formatVersion, manifest.schemaVersion <= currentSchemaVersion else {
             throw LibraryBackupError.invalidPackage
         }
-        let queue = try DatabaseQueue(path: databaseURL.path)
-        let integrity = try queue.read { db in try String.fetchAll(db, sql: "PRAGMA integrity_check") }
-        guard integrity == ["ok"] else {
-            throw LibraryBackupError.integrityCheckFailed(integrity.joined(separator: "; "))
-        }
-        let foreignKeyRows = try queue.read { db in try Row.fetchAll(db, sql: "PRAGMA foreign_key_check") }
-        guard foreignKeyRows.isEmpty else {
-            throw LibraryBackupError.foreignKeyCheckFailed(foreignKeyRows.count)
-        }
+        try checkDatabase(at: databaseURL(in: packageURL), scratchRoot: scratchRoot)
         return manifest
     }
 
-    private func databaseURL(in packageURL: URL) -> URL {
-        let current = packageURL.appendingPathComponent(Self.databaseFilename)
-        if fileManager.fileExists(atPath: current.path) { return current }
-        return packageURL.appendingPathComponent(LegacyNaming.databaseFilename)
+    private static func withReader<T>(_ url: URL, scratchRoot: URL, read: (DatabaseQueue) throws -> T) throws -> T {
+        guard url.resolvingSymlinksInPath().path == url.standardizedFileURL.path else { throw LibraryBackupError.invalidPackage }
+        var config = Configuration()
+        config.readonly = true
+        let reader: DatabaseQueue
+        do { reader = try DatabaseQueue(path: url.path, configuration: config) }
+        catch let error as DatabaseError where error.resultCode == .SQLITE_CANTOPEN || error.resultCode == .SQLITE_READONLY {
+            // Old exports retained the WAL header. SQLite on macOS may require writable
+            // sidecars just to open these snapshots. Recover on a private copy.
+            let fm = FileManager.default
+            let staging = scratchRoot.appendingPathComponent(".backup-reader-" + UUID().uuidString)
+            try fm.createDirectory(at: staging, withIntermediateDirectories: false)
+            defer { try? fm.removeItem(at: staging) }
+            let copied = staging.appendingPathComponent(databaseFilename)
+            try fm.copyItem(at: url, to: copied)
+            let wal = URL(fileURLWithPath: url.path + "-wal")
+            if fm.fileExists(atPath: wal.path) {
+                guard wal.resolvingSymlinksInPath().path == wal.path else { throw LibraryBackupError.invalidPackage }
+                try fm.copyItem(at: wal, to: URL(fileURLWithPath: copied.path + "-wal"))
+            }
+            let queue = try DatabaseQueue(path: copied.path)
+            return try read(queue)
+        }
+        return try read(reader)
     }
 
-    func restore(from packageURL: URL) throws -> LibraryBackupResult {
-        let manifest = try validate(packageURL: packageURL)
-        let rollback = try createInternalBackup(kind: .preRestore)
+    private static func checkDatabase(at url: URL, scratchRoot: URL) throws {
+        try withReader(url, scratchRoot: scratchRoot) { queue in try queue.read { db in
+            guard try db.tableExists("library_books"), try db.tableExists("grdb_migrations") else { throw LibraryBackupError.invalidPackage }
+            let integrity = try String.fetchAll(db, sql: "PRAGMA integrity_check")
+            guard integrity == ["ok"] else { throw LibraryBackupError.integrityCheckFailed(integrity.joined(separator: ", ")) }
+            let references = try Row.fetchAll(db, sql: "PRAGMA foreign_key_check")
+            guard references.isEmpty else { throw LibraryBackupError.foreignKeyCheckFailed(references.count) }
+        } }
+    }
+
+    private static func databaseURL(in package: URL) -> URL {
+        let current = package.appendingPathComponent(databaseFilename)
+        return FileManager.default.fileExists(atPath: current.path) ? current : package.appendingPathComponent(LegacyNaming.databaseFilename)
+    }
+
+    func restore(from url: URL) throws -> LibraryBackupResult {
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        return try BackupInventory.access(root: appDataURL) { try restore(url, inventory: $0) }
+    }
+
+    func restore(id: UUID) throws -> LibraryBackupResult {
+        try BackupInventory.access(root: appDataURL) { inventory in
+            try inventory.withEntry(id) { try restore($0, inventory: inventory) }
+        }
+    }
+
+    private func restore(_ url: URL, inventory: BackupInventory) throws -> LibraryBackupResult {
+        let manifest: LibraryBackupManifest
+        let source: URL
+        if url.pathExtension == "sqlite" {
+            try Self.checkDatabase(at: url, scratchRoot: appDataURL)
+            source = url
+            manifest = try Self.withReader(url, scratchRoot: appDataURL) { try databaseManifest(source: $0, kind: .preImport) }
+            guard manifest.schemaVersion <= Self.currentSchemaVersion else { throw LibraryBackupError.invalidPackage }
+        } else {
+            manifest = try validate(packageURL: url)
+            source = Self.databaseURL(in: url)
+        }
+        let rollback = try publish(.preRestore, in: inventory)
+        defer { try? inventory.rotate(using: trash) }
+        let assets = appDataURL.appendingPathComponent("TagAssets")
+        let staging = appDataURL.appendingPathComponent(".restore-" + UUID().uuidString)
+        let previous = staging.appendingPathComponent("previous")
+        let incoming = staging.appendingPathComponent("incoming")
+        var movedPrevious = false
+        var keepStaging = false
+        defer { if !keepStaging { try? fileManager.removeItem(at: staging) } }
+        if manifest.includesTagAssets {
+            try fileManager.createDirectory(at: staging, withIntermediateDirectories: false)
+            let packaged = url.appendingPathComponent("TagAssets")
+            try Self.checkAssetTree(packaged)
+            try fileManager.copyItem(at: packaged, to: incoming)
+        }
         do {
-            let source = try DatabaseQueue(path: databaseURL(in: packageURL).path)
-            try source.backup(to: databaseManager.dbQueue)
-            try restoreTagAssets(from: packageURL, includesAssets: manifest.includesTagAssets)
+            try Self.withReader(source, scratchRoot: appDataURL) { try $0.backup(to: databaseManager.dbQueue) }
             try DatabaseMigrator.nyaeh.migrate(databaseManager.dbQueue)
-            // 语义标题缓存不属于备份。恢复主库后必须丢弃它，防止复用已改变含义的 book ID。
+            // A restored book set is not a new scan or deletion in this installation.
+            try databaseManager.dbQueue.write { try $0.execute(sql: "DELETE FROM backup_membership_event") }
+            if manifest.includesTagAssets {
+                if fileManager.fileExists(atPath: assets.path) {
+                    try fileManager.moveItem(at: assets, to: previous)
+                    movedPrevious = true
+                }
+                try fileManager.moveItem(at: incoming, to: assets)
+            }
             try? semanticTitleVectorRepository?.clear()
-            return LibraryBackupResult(packageURL: packageURL, manifest: manifest)
+            return .init(packageURL: url, manifest: manifest)
         } catch {
-            let rollbackSource = try DatabaseQueue(path: rollback.packageURL.appendingPathComponent(Self.databaseFilename).path)
-            try? rollbackSource.backup(to: databaseManager.dbQueue)
-            try? restoreTagAssets(from: rollback.packageURL, includesAssets: rollback.manifest.includesTagAssets)
-            try? semanticTitleVectorRepository?.clear()
+            keepStaging = true
+            try Self.withReader(Self.databaseURL(in: rollback.packageURL), scratchRoot: appDataURL) { try $0.backup(to: databaseManager.dbQueue) }
+            if movedPrevious { try fileManager.moveItem(at: previous, to: assets) }
+            keepStaging = false
             throw error
+        }
+    }
+
+    private static func checkAssetTree(_ root: URL) throws {
+        guard try root.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true,
+              root.standardizedFileURL.path == root.resolvingSymlinksInPath().path else { throw LibraryBackupError.invalidPackage }
+        for child in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isSymbolicLinkKey, .isDirectoryKey, .isRegularFileKey]) {
+            let values = try child.resourceValues(forKeys: [.isSymbolicLinkKey, .isDirectoryKey, .isRegularFileKey])
+            guard values.isSymbolicLink != true else { throw LibraryBackupError.invalidPackage }
+            if values.isDirectory == true { try checkAssetTree(child) }
+            else if values.isRegularFile != true { throw LibraryBackupError.invalidPackage }
         }
     }
 
@@ -227,7 +360,12 @@ struct LibraryBackupService: @unchecked Sendable {
     }
 
     func repairDerivedData(books: [LibraryBook], tagRepository: TagRepository?, labelRepository: BookVersionLabelRepository?) throws -> DataHealthReport {
-        _ = try createInternalBackup(kind: .preRepair)
+        try protectedOperation(.preRepair) { _ in
+            try repairAfterBackup(books: books, tagRepository: tagRepository, labelRepository: labelRepository)
+        }
+    }
+
+    private func repairAfterBackup(books: [LibraryBook], tagRepository: TagRepository?, labelRepository: BookVersionLabelRepository?) throws -> DataHealthReport {
         for book in books {
             if let bookID = book.databaseID {
                 try tagRepository?.rebuildTags(forBookID: bookID, tagsJSON: book.tags)
@@ -347,84 +485,65 @@ struct LibraryBackupService: @unchecked Sendable {
         }
     }
 
-    private func createPackage(at packageURL: URL, kind: LibraryBackupKind, replacingExisting: Bool) throws -> LibraryBackupResult {
-        if fileManager.fileExists(atPath: packageURL.path) {
-            guard replacingExisting else { throw LibraryBackupError.destinationExists }
-            try fileManager.removeItem(at: packageURL)
+    private func databaseManifest(source: any DatabaseReader, kind: LibraryBackupKind) throws -> LibraryBackupManifest {
+        let version = try source.read { db in
+            try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations").compactMap { id in
+                id.first == "v" ? Int(id.dropFirst().prefix { $0.isNumber }) : nil
+            }.max() ?? 0
         }
-        try fileManager.createDirectory(at: packageURL, withIntermediateDirectories: true)
-        let destinationQueue = try DatabaseQueue(path: packageURL.appendingPathComponent(Self.databaseFilename).path)
-        try databaseManager.dbQueue.backup(to: destinationQueue)
+        return .init(formatVersion: 1, appName: "NyaEH", appVersion: "legacy", schemaVersion: version,
+                     createdAt: 0, kind: kind, includesTagAssets: false, excludedAssets: [])
+    }
 
-        let sourceAssets = appDataURL.appendingPathComponent(TagVisualAssetService.assetRootDirectoryName, isDirectory: true)
-        let includesAssets = fileManager.fileExists(atPath: sourceAssets.path)
-        if includesAssets {
-            try fileManager.copyItem(at: sourceAssets, to: packageURL.appendingPathComponent(TagVisualAssetService.assetRootDirectoryName, isDirectory: true))
+    private func writePackage(at url: URL, kind: LibraryBackupKind, id: UUID? = nil, now: Date = Date(),
+                              schema: Int = Self.currentSchemaVersion, includeImages: Bool = false) throws -> LibraryBackupManifest {
+        try fileManager.createDirectory(at: url, withIntermediateDirectories: false)
+        let db = try DatabaseQueue(path: url.appendingPathComponent(Self.databaseFilename).path)
+        try databaseManager.dbQueue.backup(to: db)
+        var includes = false
+        if includeImages {
+            let paths = try db.read { db in
+                try String.fetchAll(db, sql: """
+                    SELECT foreground_asset_path FROM tag_visual_profiles WHERE foreground_asset_path IS NOT NULL
+                    UNION SELECT background_asset_path FROM tag_visual_profiles WHERE background_asset_path IS NOT NULL
+                    """)
+            }
+            for path in paths where !path.isEmpty {
+                let source = appDataURL.appendingPathComponent(path)
+                guard path.hasPrefix("TagAssets/"), !path.split(separator: "/").contains(".."),
+                      source.standardizedFileURL.path == source.resolvingSymlinksInPath().path,
+                      try source.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { throw LibraryBackupError.invalidPackage }
+                let destination = url.appendingPathComponent(path)
+                try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try fileManager.copyItem(at: source, to: destination)
+                includes = true
+            }
         }
-        let manifest = LibraryBackupManifest(
-            formatVersion: LibraryBackupManifest.formatVersion,
-            appName: "NyaEH",
+        try db.close()
+        // SQLite backup can copy a WAL database header into an initially empty
+        // destination. Reopen before switching modes so SQLite reads that header.
+        let databaseURL = url.appendingPathComponent(Self.databaseFilename)
+        let finalizer = try DatabaseQueue(path: databaseURL.path)
+        try finalizer.writeWithoutTransaction { db in
+            guard try String.fetchOne(db, sql: "PRAGMA journal_mode = DELETE") == "delete" else {
+                throw LibraryBackupError.invalidPackage
+            }
+        }
+        try finalizer.close()
+        // macOS can retain an empty WAL or a shared-memory file after closing.
+        // This is an unpublished staging directory; both connections are closed.
+        for suffix in ["-wal", "-shm"] {
+            let sidecar = URL(fileURLWithPath: databaseURL.path + suffix)
+            if fileManager.fileExists(atPath: sidecar.path) { try fileManager.removeItem(at: sidecar) }
+        }
+        let m = LibraryBackupManifest(formatVersion: 1, appName: "NyaEH",
             appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development",
-            schemaVersion: Self.currentSchemaVersion,
-            createdAt: Timestamp.nowMilliseconds(),
-            kind: kind,
-            includesTagAssets: includesAssets,
-            excludedAssets: ["source archives", "Covers", "CoverVectors.sqlite", "tag translation cache", "credential files"]
-        )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(manifest).write(to: packageURL.appendingPathComponent(Self.manifestFilename), options: .atomic)
-        return LibraryBackupResult(packageURL: packageURL, manifest: manifest)
+            schemaVersion: schema, createdAt: Int64((now.timeIntervalSince1970 * 1000).rounded()), kind: kind,
+            includesTagAssets: includes, excludedAssets: ["source archives", "rebuildable caches", "credentials", "preferences"] + (includes ? [] : ["TagAssets"]), backupID: id)
+        try JSONEncoder().encode(m).write(to: url.appendingPathComponent(Self.manifestFilename), options: .atomic)
+        return m
     }
 
-    private func restoreTagAssets(from packageURL: URL, includesAssets: Bool) throws {
-        guard includesAssets else { return }
-        let source = packageURL.appendingPathComponent(TagVisualAssetService.assetRootDirectoryName, isDirectory: true)
-        let destination = appDataURL.appendingPathComponent(TagVisualAssetService.assetRootDirectoryName, isDirectory: true)
-        guard fileManager.fileExists(atPath: source.path) else { throw LibraryBackupError.invalidPackage }
-        if fileManager.fileExists(atPath: destination.path) {
-            try fileManager.removeItem(at: destination)
-        }
-        try fileManager.copyItem(at: source, to: destination)
-    }
-
-    private func pruneInternalBackups(in directory: URL) throws {
-        let urls = try fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey])
-        try prune(urls.filter { $0.lastPathComponent.hasPrefix("daily-") }, keeping: 7)
-        try prune(urls.filter { $0.lastPathComponent.hasPrefix("weekly-") }, keeping: 4)
-    }
-
-    private func prune(_ urls: [URL], keeping count: Int) throws {
-        let sorted = urls.sorted { lhs, rhs in
-            let left = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-            let right = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-            return left > right
-        }
-        for url in sorted.dropFirst(count) {
-            try fileManager.removeItem(at: url)
-        }
-    }
-
-    private static let timestampFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
-        return formatter
-    }()
-
-    private static let dayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
-
-    private static let weekFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "YYYY-'W'ww"
-        return formatter
-    }()
 }
 
 enum LibraryBackupError: LocalizedError {

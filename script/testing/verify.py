@@ -188,6 +188,7 @@ def stage_sandbox(s):
     info_path.write_bytes(plistlib.dumps(info))
     entitlements = {'com.apple.security.app-sandbox': True, 'com.apple.security.files.user-selected.read-write': True,
                     'com.apple.security.network.client': True, 'com.apple.security.network.server': True,
+                    'com.apple.security.files.bookmarks.app-scope': True,
                     'com.apple.security.get-task-allow': True,
                     'com.apple.security.temporary-exception.mach-lookup.global-name':
                     [f'{s["bundleID"]}-spks', f'{s["bundleID"]}-spki']}
@@ -195,7 +196,7 @@ def stage_sandbox(s):
     run(['codesign', '--force', '--deep', '--sign', '-', '--options', 'runtime', '--entitlements', ent, s['app']], s['log'])
     run(['codesign', '--verify', '--deep', '--strict', s['app']], s['log'])
     blob = subprocess.check_output(['codesign', '-d', '--entitlements', '-', s['app']], stderr=subprocess.DEVNULL)
-    for key in ['com.apple.security.app-sandbox', 'com.apple.security.files.user-selected.read-write']:
+    for key in ['com.apple.security.app-sandbox', 'com.apple.security.files.user-selected.read-write', 'com.apple.security.files.bookmarks.app-scope']:
         if key.encode() not in blob or b'<false/>' in blob:
             raise RuntimeError('Sandbox entitlement verification failed')
     s['localResign'] = True; save(s)
@@ -240,13 +241,36 @@ def clean_trash(s):
     for record_path in folder.glob('*.json'):
         try:
             r = json.loads(record_path.read_text()); p = canonical(r['path'])
-            if r['session'] != s['id'] or str(Path(r['source']).parent) != s['source']:
+            source = canonical(r['source'])
+            if r['session'] != s['id']:
                 raise RuntimeError('trash ownership mismatch')
             if not ('.Trash' in p.parts or '.Trashes' in p.parts): raise RuntimeError('target is not a Trash location')
-            if p.exists():
-                if not same_identity(r) or p.stat().st_size != r['size'] or hashlib.sha256(p.read_bytes()).hexdigest() != r['sha256']:
-                    raise RuntimeError('trash file identity changed')
-                p.unlink()
+            if 'backupFiles' in r:
+                roots = [Path(s['data']), Path(s['source']).parent]
+                if not any(source.is_relative_to(root) for root in roots) or source.suffix not in ('.nyaehbackup', '.sqlite'):
+                    raise RuntimeError('backup trash ownership mismatch')
+                if p.exists():
+                    if not same_identity(r):
+                        raise RuntimeError('backup trash identity changed')
+                    entries = [p, *p.rglob('*')] if p.is_dir() else [p]
+                    hashes = {}
+                    for entry in entries:
+                        canonical(entry)
+                        if not entry.is_dir() and not entry.is_file():
+                            raise RuntimeError('unexpected backup entry')
+                        key = '' if entry == p else '/' + str(entry.relative_to(p))
+                        hashes[key] = 'directory' if entry.is_dir() else hashlib.sha256(entry.read_bytes()).hexdigest()
+                    if hashes != r['backupFiles']:
+                        raise RuntimeError('backup trash contents changed')
+                    if p.is_dir(): shutil.rmtree(p)
+                    else: p.unlink()
+            else:
+                if source.parent != Path(s['source']):
+                    raise RuntimeError('trash ownership mismatch')
+                if p.exists():
+                    if not same_identity(r) or p.stat().st_size != r['size'] or hashlib.sha256(p.read_bytes()).hexdigest() != r['sha256']:
+                        raise RuntimeError('trash file identity changed')
+                    p.unlink()
             record_path.unlink()
         except Exception as e: errors.append(str(e))
     return errors

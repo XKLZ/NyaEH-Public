@@ -261,17 +261,13 @@ final class CatalogStore: BookCardLibrary {
             let tagVisualAssetService = try TagVisualAssetService.appDefault()
             let coverVectorRepository = try? SQLiteCoverVectorRepository.appDefault()
             let semanticTitleVectorRepository = try? SQLiteSemanticTitleVectorRepository.appDefault()
-            let externalImportService = ExternalLibraryImportService(
-                dbQueue: database.dbQueue,
-                databasePath: database.path,
-                appDataURL: try AppDataDirectory.rootURL()
-            )
             let backupService = LibraryBackupService(
                 databaseManager: database,
                 appDataURL: try AppDataDirectory.rootURL(),
                 coverVectorRepository: coverVectorRepository,
                 semanticTitleVectorRepository: semanticTitleVectorRepository
             )
+            let externalImportService = ExternalLibraryImportService(dbQueue: database.dbQueue, backups: backupService)
             return CatalogStore(
                 service: BookLibraryService(
                     bookRepository: bookRepository,
@@ -1622,7 +1618,7 @@ final class CatalogStore: BookCardLibrary {
             reloadAddToSelectedVersionGroupRecommendations()
             if !isInitialLoad { reloadSearchAfterLibraryChange() }
             tagTranslationManifest = try? service.cachedTagTranslationManifest()
-            try? service.createAutomaticBackupsIfNeeded()
+            if isInitialLoad { reconcileBackups() }
             loadError = nil
 
             if selectedBookID == nil {
@@ -1783,47 +1779,31 @@ final class CatalogStore: BookCardLibrary {
         return snapshots
     }
 
-    func exportBackup(to url: URL, localizer: AppLocalizer) {
-        guard !isManagingBackup else { return }
-        isManagingBackup = true
-        backupMessage = nil
-        let service = service
-        Task { @MainActor [weak self] in
-            defer { self?.isManagingBackup = false }
-            do {
-                let result = try await Task.detached(priority: .utility) {
-                    try service.exportBackup(to: url)
-                }.cancellableValue
-                self?.backupMessage = result.packageURL.path
-                self?.loadError = nil
-            } catch {
-                self?.backupMessage = error.localizedDescription
-                self?.loadError = error.localizedDescription
-            }
-        }
+    var backups: LibraryBackupService? { service.backupService }
+
+    func reconcileBackups() {
+        guard let backups else { return }
+        Task.detached(priority: .utility) { try? backups.reconcile() }
     }
 
-    func restoreBackup(from url: URL, localizer: AppLocalizer) {
-        guard !isManagingBackup else { return }
+    func manageBackup(_ command: BackupCommand, localizer: AppLocalizer) {
+        guard let backups, !isManagingBackup else { return }
         isManagingBackup = true
         backupMessage = nil
-        let service = service
-        Task { @MainActor [weak self] in
+        Task { [weak self] in
             defer { self?.isManagingBackup = false }
             do {
-                _ = try await Task.detached(priority: .utility) {
-                    try service.restoreBackup(from: url)
-                }.cancellableValue
+                let output = try await Task.detached(priority: .utility) {
+                    try command.perform(using: backups)
+                }.value
                 guard let self else { return }
-                invalidateTagSummaries()
-                invalidateWorkDetails()
-                refresh()
-                backupMessage = localizer.string(.backupRestoreSucceeded)
-                loadError = nil
-            } catch {
-                self?.backupMessage = error.localizedDescription
-                self?.loadError = error.localizedDescription
-            }
+                if command.isRestore {
+                    invalidateTagSummaries()
+                    invalidateWorkDetails()
+                    refresh()
+                    backupMessage = localizer.string(.backupRestoreSucceeded)
+                } else { backupMessage = output }
+            } catch { self?.backupMessage = error.localizedDescription }
         }
     }
 

@@ -18,9 +18,19 @@ final class DatabaseManager {
         }
         dbQueue = try DatabasePool(path: path, configuration: configuration)
         if databaseExisted, try Self.needsMigrationBackup(dbQueue) {
-            try Self.createPreMigrationBackup(dbQueue: dbQueue, databasePath: path)
+            let schema = try dbQueue.read { db in
+                try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations").compactMap { id in
+                    id.first == "v" ? Int(id.dropFirst().prefix { $0.isNumber }) : nil
+                }.max() ?? 0
+            }
+            let root = URL(fileURLWithPath: path).deletingLastPathComponent()
+            let backups = LibraryBackupService(databaseManager: self, appDataURL: root)
+            try backups.protectedOperation(.preMigration, schema: schema) { _ in
+                try DatabaseMigrator.nyaeh.migrate(dbQueue)
+            }
+        } else {
+            try DatabaseMigrator.nyaeh.migrate(dbQueue)
         }
-        try DatabaseMigrator.nyaeh.migrate(dbQueue)
         try optimize()
     }
 
@@ -104,60 +114,7 @@ final class DatabaseManager {
         }
     }
 
-    private static func createPreMigrationBackup(dbQueue: any DatabaseWriter, databasePath: String) throws {
-        let fileManager = FileManager.default
-        let appDataURL = URL(fileURLWithPath: databasePath).deletingLastPathComponent()
-        let backupDirectory = appDataURL.appendingPathComponent("Backups", isDirectory: true)
-        try fileManager.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        let stamp = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        let packageURL = backupDirectory.appendingPathComponent(
-            "preMigration-\(stamp)-\(UUID().uuidString.prefix(8)).\(LibraryBackupService.packageExtension)",
-            isDirectory: true
-        )
-        try fileManager.createDirectory(at: packageURL, withIntermediateDirectories: true)
-        do {
-            let destination = try DatabaseQueue(
-                path: packageURL.appendingPathComponent(LibraryBackupService.databaseFilename).path
-            )
-            try dbQueue.backup(to: destination)
-            let sourceAssets = appDataURL.appendingPathComponent(TagVisualAssetService.assetRootDirectoryName, isDirectory: true)
-            let includesAssets = fileManager.fileExists(atPath: sourceAssets.path)
-            if includesAssets {
-                try fileManager.copyItem(
-                    at: sourceAssets,
-                    to: packageURL.appendingPathComponent(TagVisualAssetService.assetRootDirectoryName, isDirectory: true)
-                )
-            }
-            let schemaVersion = try dbQueue.read { db -> Int in
-                let identifiers = try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations")
-                return identifiers.compactMap { identifier in
-                    guard identifier.first == "v" else { return nil }
-                    return Int(identifier.dropFirst().prefix { $0.isNumber })
-                }.max() ?? 0
-            }
-            let manifest = LibraryBackupManifest(
-                formatVersion: LibraryBackupManifest.formatVersion,
-                appName: "NyaEH",
-                appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development",
-                schemaVersion: schemaVersion,
-                createdAt: Timestamp.nowMilliseconds(),
-                kind: .preMigration,
-                includesTagAssets: includesAssets,
-                excludedAssets: ["source archives", "Covers", "CoverVectors.sqlite", "tag translation cache", "Keychain credentials"]
-            )
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            try encoder.encode(manifest).write(
-                to: packageURL.appendingPathComponent(LibraryBackupService.manifestFilename),
-                options: .atomic
-            )
-        } catch {
-            try? fileManager.removeItem(at: packageURL)
-            throw error
-        }
-    }
+
 }
 
 struct DatabaseForeignKeyViolation: Equatable, Sendable {

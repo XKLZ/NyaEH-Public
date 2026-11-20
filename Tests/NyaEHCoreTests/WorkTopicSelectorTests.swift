@@ -102,24 +102,27 @@ struct WorkTopicSelectorTests {
     }
 
     @MainActor
-    @Test func coldPreparationKeepsTheOldShelfAndReusesExactlyOneDecodedImage() async throws {
+    @Test(.timeLimit(.minutes(1))) func coldPreparationKeepsTheOldShelfAndReusesExactlyOneDecodedImage() async throws {
         let bitmap = try #require(CGContext(data: nil, width: 64, height: 88, bitsPerComponent: 8,
                                             bytesPerRow: 256, space: CGColorSpaceCreateDeviceRGB(),
                                             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
         let image = try #require(bitmap.makeImage())
-        let gate = PortraitGate()
+        let (loads, started) = AsyncStream<Int64>.makeStream()
+        defer { started.finish() }
+        let gate = PortraitGate(started: started)
+        var requests = loads.makeAsyncIterator()
         let motion = WorkTopicMotionCoordinator(scheduleAnimation: { _, _ in nil }, load: { request in await gate.load(request) })
         var selected: Int64?
         motion.show(character(1), request: nil, restore: true, reduceMotion: false) { selected = $0 }
         let request = WorkTopicAvatarRequest(url: URL(fileURLWithPath: "/synthetic/portrait.png"), revision: 1, pixels: 1200)
         motion.show(character(2), request: request, reduceMotion: false) { selected = $0 }
-        try #require(await gate.waitUntilLoading(revision: 1))
+        try #require(await requests.next() == 1)
         #expect(motion.flight == nil && motion.shelfID == 1 && !motion.shelfIsExiting)
         #expect(selected == 1)
         motion.show(character(3), request: .init(url: request.url, revision: 2, pixels: 1200), reduceMotion: false) {
             selected = $0
         }
-        try #require(await gate.waitUntilLoading(revision: 2))
+        try #require(await requests.next() == 2)
         await gate.complete(revision: 1, with: image)
         #expect(selected == 1)
         await gate.complete(revision: 2, with: image)
@@ -307,16 +310,15 @@ struct WorkTopicSelectorTests {
 private actor PortraitGate {
     private var continuations: [Int64: CheckedContinuation<CGImage?, Never>] = [:]
 
-    func load(_ request: WorkTopicAvatarRequest) async -> CGImage? {
-        await withCheckedContinuation { continuations[request.revision] = $0 }
-    }
+    private let started: AsyncStream<Int64>.Continuation
 
-    func waitUntilLoading(revision: Int64) async -> Bool {
-        let timeout = ContinuousClock.now + .seconds(2)
-        while continuations[revision] == nil && ContinuousClock.now < timeout {
-            try? await Task.sleep(for: .milliseconds(2))
+    init(started: AsyncStream<Int64>.Continuation) { self.started = started }
+
+    func load(_ request: WorkTopicAvatarRequest) async -> CGImage? {
+        await withCheckedContinuation { continuation in
+            continuations[request.revision] = continuation
+            started.yield(request.revision)
         }
-        return continuations[revision] != nil
     }
 
     func complete(revision: Int64, with image: CGImage) {
