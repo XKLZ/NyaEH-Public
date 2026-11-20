@@ -334,7 +334,7 @@ struct SQLiteLibraryBookRepositoryTests {
     @Test("library service deletes cover vector cache after database delete")
     func libraryServiceDeletesCoverVectorCacheAfterDatabaseDelete() throws {
         let context = try makeContext()
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let sourceURL = directory.appendingPathComponent("source.cbz")
@@ -377,7 +377,7 @@ struct SQLiteLibraryBookRepositoryTests {
         hidden.isUserHidden = true
         hidden = try context.books.update(hidden)
 
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let vectors = try SQLiteCoverVectorRepository(
@@ -405,7 +405,7 @@ struct SQLiteLibraryBookRepositoryTests {
     @Test("store publishes cover image results in similarity order")
     func storePublishesCoverImageResultsInSimilarityOrder() async throws {
         let context = try makeContext()
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let queryURL = directory.appendingPathComponent("query.jpg")
@@ -526,7 +526,7 @@ struct SQLiteLibraryBookRepositoryTests {
 
     @Test("migrates existing v2 database to tag indexing schema")
     func migratesExistingV2DatabaseToTagIndexingSchema() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let databaseURL = directory.appendingPathComponent("NyaEH.sqlite")
@@ -4386,7 +4386,7 @@ struct SQLiteLibraryBookRepositoryTests {
 
     @Test("migration backfills version labels and suggestions")
     func migrationBackfillsVersionLabelsAndSuggestions() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let databaseURL = directory.appendingPathComponent("NyaEH.sqlite")
@@ -6065,7 +6065,7 @@ struct SQLiteLibraryBookRepositoryTests {
 
     @Test("tag visual asset service stores compressed readable visual assets")
     func tagVisualAssetServiceStoresCompressedReadableVisualAssets() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let service = TagVisualAssetService(appDataRoot: directory)
@@ -6122,7 +6122,7 @@ struct SQLiteLibraryBookRepositoryTests {
 
     @Test("tag visual asset service preserves suitable jpeg backgrounds")
     func tagVisualAssetServicePreservesSuitableJPEGBackgrounds() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let service = TagVisualAssetService(appDataRoot: directory)
@@ -6149,7 +6149,7 @@ struct SQLiteLibraryBookRepositoryTests {
 
     @Test("tag visual asset service keeps foreground portraits high resolution")
     func tagVisualAssetServiceKeepsForegroundPortraitsHighResolution() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let service = TagVisualAssetService(appDataRoot: directory)
@@ -6176,7 +6176,7 @@ struct SQLiteLibraryBookRepositoryTests {
 
     @Test("tag visual asset service keeps transparent backgrounds as png")
     func tagVisualAssetServiceKeepsTransparentBackgroundsAsPNG() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let service = TagVisualAssetService(appDataRoot: directory)
@@ -6202,7 +6202,7 @@ struct SQLiteLibraryBookRepositoryTests {
 
     @Test("tag visual asset service ignores transparent pixels when generating palette")
     func tagVisualAssetServiceIgnoresTransparentPixelsWhenGeneratingPalette() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let service = TagVisualAssetService(appDataRoot: directory)
@@ -6227,7 +6227,7 @@ struct SQLiteLibraryBookRepositoryTests {
 
     @Test("tag visual asset service rebuilds missing hero blur cache")
     func tagVisualAssetServiceRebuildsMissingHeroBlurCache() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let service = TagVisualAssetService(appDataRoot: directory)
@@ -6251,7 +6251,7 @@ struct SQLiteLibraryBookRepositoryTests {
 
     @Test("tag visual asset service rebuilds blur cache for legacy png background")
     func tagVisualAssetServiceRebuildsBlurCacheForLegacyPNGBackground() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let service = TagVisualAssetService(appDataRoot: directory)
@@ -6272,7 +6272,7 @@ struct SQLiteLibraryBookRepositoryTests {
 
     @Test("tag visual asset service rebuilds palette cache for legacy png background")
     func tagVisualAssetServiceRebuildsPaletteCacheForLegacyPNGBackground() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let service = TagVisualAssetService(appDataRoot: directory)
@@ -6295,7 +6295,7 @@ struct SQLiteLibraryBookRepositoryTests {
 
     @Test("tag visual asset service repairs damaged palette cache")
     func tagVisualAssetServiceRepairsDamagedPaletteCache() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let service = TagVisualAssetService(appDataRoot: directory)
@@ -6323,7 +6323,7 @@ struct SQLiteLibraryBookRepositoryTests {
 
     @Test("tag visual asset service rebuilds legacy unversioned palette cache")
     func tagVisualAssetServiceRebuildsLegacyUnversionedPaletteCache() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let service = TagVisualAssetService(appDataRoot: directory)
@@ -6352,7 +6352,7 @@ struct SQLiteLibraryBookRepositoryTests {
 
     @Test("tag visual asset service refreshes hero blur cache when background updates")
     func tagVisualAssetServiceRefreshesHeroBlurCacheWhenBackgroundUpdates() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let service = TagVisualAssetService(appDataRoot: directory)
@@ -6410,7 +6410,7 @@ struct SQLiteLibraryBookRepositoryTests {
     @MainActor
     @Test("tag drop image loader reads file urls and image data")
     func tagDropImageLoaderReadsFileURLsAndImageData() async throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let imageData = try testPNGData(size: NSSize(width: 320, height: 180), color: .systemTeal)
@@ -6479,7 +6479,7 @@ struct SQLiteLibraryBookRepositoryTests {
         #expect(CoverImageSearchDropLoader.typeIdentifiers.contains(UTType.fileURL.identifier))
         #expect(CoverImageSearchDropLoader.typeIdentifiers.contains(UTType.image.identifier))
 
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let imageData = try testPNGData(size: NSSize(width: 120, height: 180), color: .systemPurple)
@@ -6529,7 +6529,7 @@ struct SQLiteLibraryBookRepositoryTests {
         )
         let parody = try #require(try context.tags.fetchAllTags().first { $0.rawValue == "parody:love live" })
         let tagID = try #require(parody.id)
-        let appDataRoot = FileManager.default.temporaryDirectory
+        let appDataRoot = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let service = BookLibraryService(
             bookRepository: context.books,
@@ -6588,7 +6588,7 @@ struct SQLiteLibraryBookRepositoryTests {
         )
         let parody = try #require(try context.tags.fetchAllTags().first { $0.rawValue == "parody:love live" })
         let tagID = try #require(parody.id)
-        let appDataRoot = FileManager.default.temporaryDirectory
+        let appDataRoot = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let service = BookLibraryService(
             bookRepository: context.books,
@@ -6760,7 +6760,7 @@ struct SQLiteLibraryBookRepositoryTests {
     }
 
     private func makeContext() throws -> RepositoryContext {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let database = try DatabaseManager(path: directory.appendingPathComponent("NyaEH.sqlite").path)

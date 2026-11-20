@@ -245,7 +245,7 @@ struct WorkTopicSelectorTests {
     }
 
     @Test func avatarDecodesToRequestedPixelSizeAndInvalidatesByRevision() async throws {
-        let url = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).png")
+        let url = TestRunResources.directory.appending(path: "\(UUID().uuidString).png")
         defer { try? FileManager.default.removeItem(at: url) }
 
         func writeImage(width: Int, height: Int, visible: CGRect? = nil) throws {

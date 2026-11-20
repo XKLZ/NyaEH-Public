@@ -33,16 +33,24 @@ case "stop":
     while !app.isTerminated && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
     if !app.isTerminated { fail("termination timed out; no force kill performed") }
 case "preferences-delete":
-    guard args.count == 2, args[1].hasPrefix("dev.gazelee.NyaEH.qa."), UUID(uuidString: String(args[1].dropFirst("dev.gazelee.NyaEH.qa.".count))) != nil else { fail("not a QA preferences domain") }
-    // Synchronize the target domain, not this helper's standard defaults domain.
-    let domain = args[1] as CFString
-    for host in [kCFPreferencesAnyHost, kCFPreferencesCurrentHost] {
-        if let keys = CFPreferencesCopyKeyList(domain, kCFPreferencesCurrentUser, host) {
-            CFPreferencesSetMultiple(nil, keys, domain, kCFPreferencesCurrentUser, host)
-        }
-        guard CFPreferencesSynchronize(domain, kCFPreferencesCurrentUser, host) else { fail("preference synchronization failed") }
-        if let remaining = CFPreferencesCopyKeyList(domain, kCFPreferencesCurrentUser, host), CFArrayGetCount(remaining) != 0 {
-            fail("preference domain remains nonempty")
+    let domains = args.dropFirst()
+    let qa = "dev.gazelee.NyaEH.qa.", unit = "dev.gazelee.NyaEH.unit."
+    guard !domains.isEmpty, domains.allSatisfy({ name in
+        if name.hasPrefix(qa) { return UUID(uuidString: String(name.dropFirst(qa.count))) != nil }
+        guard name.hasPrefix(unit) else { return false }
+        let ids = name.dropFirst(unit.count).components(separatedBy: ".")
+        return ids.count == 2 && ids.allSatisfy { UUID(uuidString: $0) != nil }
+    }) else { fail("not an isolated test preferences domain") }
+    for name in domains {
+        let domain = name as CFString
+        for host in [kCFPreferencesAnyHost, kCFPreferencesCurrentHost] {
+            if let keys = CFPreferencesCopyKeyList(domain, kCFPreferencesCurrentUser, host), CFArrayGetCount(keys) > 0 {
+                CFPreferencesSetMultiple(nil, keys, domain, kCFPreferencesCurrentUser, host)
+            }
+            guard CFPreferencesSynchronize(domain, kCFPreferencesCurrentUser, host) else { fail("preference synchronization failed") }
+            if let remaining = CFPreferencesCopyKeyList(domain, kCFPreferencesCurrentUser, host), CFArrayGetCount(remaining) != 0 {
+                fail("preference domain remains nonempty")
+            }
         }
     }
     print("cleared")

@@ -69,7 +69,7 @@ struct LegacyNamingTests {
     @Test("preferences migrate in their own domain without replacing new settings or importing old secrets")
     func migratesPreferencesAndBookmark() throws {
         try withDirectory { root in
-            let domain = "dev.gazelee.NyaEH.naming-tests.\(UUID().uuidString)"
+            let domain = TestRunResources.newDefaultsDomain()
             let defaults = try #require(UserDefaults(suiteName: domain))
             defer { defaults.removePersistentDomain(forName: domain) }
             let bookmark = try LibraryBookmarkService.bookmarkData(for: root)
@@ -91,7 +91,7 @@ struct LegacyNamingTests {
     }
 
     private func withDirectory(_ body: (URL) throws -> Void) throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let directory = TestRunResources.directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: directory) }
         try body(directory)

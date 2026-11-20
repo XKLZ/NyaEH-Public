@@ -1,0 +1,14 @@
+#!/bin/sh
+# Local to the scratch command's PATH, including builds inside probe scripts.
+set -eu
+scheme=false
+for arg in "$@"; do
+    case "$arg" in
+        -derivedDataPath) exec "$NYAEH_SCRATCH_XCODEBUILD" "$@" ;;
+        -scheme|-xctestrun|-testProductsPath) scheme=true ;;
+    esac
+done
+if [ "$scheme" = true ]; then
+    set -- "$@" -derivedDataPath "$NYAEH_SCRATCH_DERIVED_DATA"
+fi
+exec "$NYAEH_SCRATCH_XCODEBUILD" "$@"

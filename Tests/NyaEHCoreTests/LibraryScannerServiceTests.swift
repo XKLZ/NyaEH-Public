@@ -822,7 +822,7 @@ struct LibraryScannerServiceTests {
         coverCache: (any CoverCaching)? = nil,
         maxConcurrentArchiveInspections: Int = 1
     ) throws -> ScannerContext {
-        let root = FileManager.default.temporaryDirectory
+        let root = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let database = try DatabaseManager(path: root.appendingPathComponent("NyaEH.sqlite").path)

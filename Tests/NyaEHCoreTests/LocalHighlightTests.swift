@@ -51,8 +51,7 @@ struct LocalHighlightTests {
     @MainActor
     @Test("preferences default local highlight service off and clamp port")
     func preferencesDefaultAndClampLocalHighlightPort() {
-        let suiteName = TestPreferencesHelper.Suite.localHighlight
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -155,8 +154,7 @@ struct LocalHighlightTests {
             occupiedServer.stop()
         }
 
-        let suiteName = TestPreferencesHelper.Suite.localHighlightController
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)

@@ -51,7 +51,7 @@ struct LibraryBackupServiceTests {
     }
 
     private func makeContext() throws -> BackupTestContext {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let root = TestRunResources.directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let database = try DatabaseManager(path: root.appendingPathComponent("NyaEH.sqlite").path)
         return .init(

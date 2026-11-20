@@ -95,8 +95,8 @@ struct AppLanguagePreferenceTests {
     }
 
     private func isolatedDefaults() -> (UserDefaults, UserDefaults, String, String) {
-        let legacyDomain = "dev.gazelee.NyaEH.language-test.\(UUID().uuidString)"
-        let applicationDomain = "dev.gazelee.NyaEH.app-language-test.\(UUID().uuidString)"
+        let legacyDomain = TestRunResources.newDefaultsDomain()
+        let applicationDomain = TestRunResources.newDefaultsDomain()
         return (UserDefaults(suiteName: legacyDomain)!, UserDefaults(suiteName: applicationDomain)!, legacyDomain, applicationDomain)
     }
 

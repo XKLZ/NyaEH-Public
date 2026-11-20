@@ -7,8 +7,8 @@ struct UpdateAccessTests {
     @Test("Sparkle owns automatic update preferences across settings instances")
     @MainActor
     func automaticUpdateSettingsPersist() throws {
-        let bundleID = "dev.gazelee.NyaEH.update-settings-test.\(UUID().uuidString)"
-        let bundleURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(bundleID).app")
+        let bundleID = TestRunResources.newDefaultsDomain()
+        let bundleURL = TestRunResources.directory.appendingPathComponent("\(bundleID).app")
         let contentsURL = bundleURL.appendingPathComponent("Contents")
         try FileManager.default.createDirectory(at: contentsURL, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: bundleURL) }

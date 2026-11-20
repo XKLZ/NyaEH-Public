@@ -6,7 +6,7 @@ import Testing
 struct CoverDistanceCalibrationTests {
     @Test("generated vectors exercise the squared L2 threshold boundaries")
     func syntheticThresholds() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: directory) }

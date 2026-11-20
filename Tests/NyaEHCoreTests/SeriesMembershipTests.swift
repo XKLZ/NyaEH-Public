@@ -161,7 +161,7 @@ struct SeriesMembershipTests {
     }
 
     private func makeFixture() throws -> Fixture {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = TestRunResources.directory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let database = try DatabaseManager(path: root.appendingPathComponent("NyaEH.sqlite").path)
         return Fixture(root: root, database: database)

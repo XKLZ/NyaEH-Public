@@ -181,7 +181,7 @@ struct ComicArchivePageLoadingServiceTests {
     }
 
     private func temporaryArchiveURL() throws -> URL {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory.appendingPathComponent("sample.zip")

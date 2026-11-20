@@ -99,6 +99,72 @@ class SessionTests(unittest.TestCase):
         with patch.object(Path, 'home', return_value=self.root), patch.object(v, 'helper', side_effect=clear_then_unexpected_write):
             with self.assertRaises(RuntimeError): v.remove_preferences(s)
         self.assertTrue(p.exists())
+    def test_completed_session_rechecks_late_preferences_before_expiring_record(self):
+        s = v.new_session(False)
+        s.update(status='passed', finished=time.time() - 31 * 86400)
+        v.cleanup(s)
+        prefs = self.root / 'Library/Preferences'
+        prefs.mkdir(parents=True)
+        late = prefs / (s['suite'] + '.plist')
+        sentinel = prefs / 'NyaEH.Development.plist'
+        late.write_bytes(v.plistlib.dumps({'NSWindow Frame': 'test'}))
+        sentinel.write_bytes(b'unrelated')
+        with patch.object(Path, 'home', return_value=self.root), patch.object(v, 'helper', side_effect=RuntimeError('busy')):
+            v.expire()
+            retained = v.load(s['id'])
+            self.assertTrue(retained['preferenceRetry'])
+            self.assertTrue(late.exists())
+        with patch.object(Path, 'home', return_value=self.root), patch.object(v, 'PREFERENCE_RECHECK_DELAYS', (0,)):
+            v.expire()
+        self.assertFalse(late.exists())
+        self.assertFalse((v.SESSIONS / s['id']).exists())
+        self.assertEqual(sentinel.read_bytes(), b'unrelated')
+
+    def test_swift_test_failure_keeps_only_output_and_exit_status(self):
+        def fail_tests(command, log, env, **options):
+            if command[:2] == ['swift', 'test']:
+                Path(log).write_text('a test assertion failed')
+                raise v.CommandFailed(7, log)
+        with patch.object(v, 'ensure_helper'), patch.object(v, 'run', side_effect=fail_tests), patch.object(v.sys, 'argv', ['verify']):
+            with self.assertRaises(v.CommandFailed):
+                v.main()
+        f, = v.SESSIONS.glob('*/session.json')
+        result = v.load(f.parent.name)
+        self.assertEqual((result['cleanup'], result['testExitCode'], result['tests']), ('complete', 7, 'failed'))
+        self.assertEqual(Path(result['unitLog']['path']).read_text(), 'a test assertion failed')
+        self.assertFalse(Path(result['work']).exists())
+        with patch.object(time, 'time', return_value=time.time() + 31 * 86400):
+            v.expire()
+        self.assertFalse(f.parent.exists())
+
+    def test_expiration_only_removes_the_completed_sessions_own_report(self):
+        exported = v.REPORTS / 'exported-metrics.json'
+        exported.write_text('{"score": 1}')
+        s = v.new_session(False)
+        s.update(status='passed', finished=time.time())
+        v.cleanup(s)
+        with patch.object(time, 'time', return_value=time.time() + 31 * 86400):
+            v.expire()
+        self.assertFalse((v.REPORTS / (s['id'] + '.json')).exists())
+        self.assertEqual(exported.read_text(), '{"score": 1}')
+
+    def test_qa_shutdown_waits_for_final_window_write_before_clearing(self):
+        s = v.new_session(False)
+        s.update(status='passed', finished=time.time(), process={'pid': 42, 'started': 1})
+        prefs = self.root / 'Library/Preferences'
+        prefs.mkdir(parents=True)
+        late = prefs / (s['suite'] + '.plist')
+        writes = [dict(window='closed'), None, {}, {}]
+        def write_snapshot(_):
+            snapshot = writes.pop(0)
+            if snapshot is not None:
+                late.write_bytes(v.plistlib.dumps(snapshot))
+        with patch.object(Path, 'home', return_value=self.root), patch.object(time, 'sleep', side_effect=write_snapshot):
+            v.cleanup(s)
+        self.assertFalse(writes)
+        self.assertEqual(s['cleanup'], 'complete')
+        self.assertFalse(late.exists())
+
     def test_stop_timeout_preserves_all_resources(self):
         s = v.new_session(False)
         with patch.object(v, 'stop', side_effect=RuntimeError('timeout')):

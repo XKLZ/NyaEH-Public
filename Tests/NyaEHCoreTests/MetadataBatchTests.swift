@@ -301,7 +301,7 @@ struct MetadataBatchTests {
     }
 
     private func makeContext() throws -> MetadataBatchRepositoryContext {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let database = try DatabaseManager(path: directory.appendingPathComponent("NyaEH.sqlite").path)

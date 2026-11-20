@@ -110,7 +110,7 @@ struct CoverVectorRepositoryTests {
     }
 
     private func makeRepository() throws -> SQLiteCoverVectorRepository {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return try SQLiteCoverVectorRepository(path: directory.appendingPathComponent("CoverVectors.sqlite").path)

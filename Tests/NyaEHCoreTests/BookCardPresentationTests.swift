@@ -283,7 +283,7 @@ struct BookCardPresentationTests {
 
     @MainActor
     @Test func preferencesDistinguishUnsetFromAllHidden() throws {
-        let domain = "NyaEH.BookCardPresentationTests.\(UUID())"
+        let domain = TestRunResources.newDefaultsDomain()
         let defaults = try #require(UserDefaults(suiteName: domain))
         defer { defaults.removePersistentDomain(forName: domain) }
         let preferences = AppPreferences(userDefaults: defaults, applicationLanguageDomain: domain)

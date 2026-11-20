@@ -20,7 +20,7 @@ struct CoverPrivacyTests {
     }
 
     @Test @MainActor func restoresPreferencesOnReload() throws {
-        let name = "NyaEH.cover-privacy-tests.\(UUID().uuidString)"
+        let name = TestRunResources.newDefaultsDomain()
         let defaults = try #require(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
         func open() -> AppPreferences {

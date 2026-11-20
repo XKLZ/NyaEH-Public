@@ -408,7 +408,7 @@ struct GalleryMetadataFetchServiceTests {
     @Test("deleting book removes source file and database row")
     func deletingBookRemovesSourceFileAndDatabaseRow() throws {
         let context = try makeContext()
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let fileURL = directory.appendingPathComponent("sample.cbz")
@@ -436,7 +436,7 @@ struct GalleryMetadataFetchServiceTests {
     @Test("deleting book preserves shared metadata and cover")
     func deletingBookPreservesSharedMetadataAndCover() throws {
         let context = try makeContext()
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let hash = "0123456789abcdef0123456789abcdef01234567"
@@ -484,7 +484,7 @@ struct GalleryMetadataFetchServiceTests {
     }
 
     private func makeContext() throws -> RepositoryContext {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let database = try DatabaseManager(path: directory.appendingPathComponent("NyaEH.sqlite").path)

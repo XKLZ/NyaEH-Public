@@ -89,7 +89,7 @@ struct ImportPipelineRepositoryTests {
     }
 
     private func makeContext() throws -> ImportPipelineTestContext {
-        let root = FileManager.default.temporaryDirectory
+        let root = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let database = try DatabaseManager(path: root.appendingPathComponent("NyaEH.sqlite").path)

@@ -31,6 +31,12 @@ Codex Run button 当前指向：
 
 `./script/build_and_run.sh` 启动持久的 **NyaEH 开发版**（`dist/NyaEHDev.app`），继续使用 `.nyaeh-dev`。脚本先在临时目录构建完整的新包，成功后才按路径、Bundle ID 和启动时间停止已登记的旧实例并替换；构建失败不影响旧实例。开发版语言设置的“立即重启”也调用此脚本，可能需要等待重新构建。缺少配套启动参数时直接双击开发包会显示启动错误，绝不回退到正式数据库或 Keychain。
 
+### Swift 单测资源
+
+直接运行 `swift test`、筛选用例和性能脚本都使用同一套资源管理，需要 PATH 中可用的 Python 3。首次清理偏好时使用 Xcode 工具链编译辅助程序，后续复用。测试代码通过 `TestRunResources.directory` 创建各自的样本目录，通过 `newDefaultsDomain()` 取得独立的真实偏好域。同一用例需要模拟重启时，把取得的域名传给多个实例。
+
+每个使用这些资源的测试进程在 `.nyaeh-verification/unit-runs/` 下持有独立文件锁。普通通过和断言失败都会回收数据库、WAL/SHM、样本和已登记的偏好；使用真实偏好的轮次在清除后第 1、5、15 秒复查整批 plist，以捕获 macOS 延迟落盘。被强制终止的进程由后续单测或验证入口回收。只保留用于复查偏好回写的精简登记，最长 30 天。完整验收若在 Swift 单测阶段失败，错误输出和退出码可在对应会话的 `unit-tests.log` 和报告中查看。
+
 ### 一次性验收与清理
 
 统一验收入口：
@@ -55,6 +61,16 @@ Codex Run button 当前指向：
 废纸篓只清理本轮登记、且路径及文件身份仍匹配的合成文件，绝不清空整个废纸篓。清理失败会保留重试记录并在报告中标为未完成。锁屏或无法完成界面操作时维持 `pending-ui`，不能以构建成功代替界面通过。不要修改会话清单或手工移动会话目录。
 
 验收启动必须收到会话 ID、PID、宿主及实际数据路径匹配的应用就绪记录；仅有同名进程不算通过。沙盒包通过 Xcode 命令行覆盖测试标识，并仅对测试产物使用本地 ad-hoc 签名，报告记录这一差异。
+
+### 一次性专项验证
+
+用 `./script/verify.sh scratch -- <命令> [参数…]` 执行临时探针或截图脚本。命令在新建的专项工作目录启动，继承终端输出，并将退出码返回给调用方。通过 `NYAEH_PROJECT_ROOT` 读取项目，生成的临时源码、样本和截图放在当前目录。需要交付的文件由命令显式复制到自己指定的外部路径。
+
+```bash
+./script/verify.sh scratch -- sh -c 'printf "fixture\n" > sample.txt && test -s sample.txt'
+```
+
+通过本轮 PATH 调用带 `-scheme` 的 `xcodebuild` 时会自动使用本轮的 DerivedData，嵌套脚本同样生效。若脚本通过 `xcrun` 或绝对路径绕过 PATH，请显式传入 `-derivedDataPath "$NYAEH_SCRATCH_DERIVED_DATA"`。临时 SwiftPM 工程在本轮目录内构建，命令也可使用 `NYAEH_SCRATCH_DIR` 指定专用输出。成功后工作目录立即回收；失败或中断现场保留 7 天，由后续验证入口清理。普通开发构建继续用现有缓存。刚退出的 QA 宿主会预留最多 15 秒让 AppKit 写回窗口状态，再清除偏好并复查。已结案 QA 的独立偏好域会在后续验证入口和记录过期前再次检查。
 
 如果需要验证Xcode shell：
 

@@ -12,7 +12,7 @@ struct PerformanceVerificationTests {
         }
 
         for count in [5_000, 10_000, 30_000] {
-            let directory = FileManager.default.temporaryDirectory
+            let directory = TestRunResources.directory
                 .appendingPathComponent("NyaEH-Performance-\(UUID().uuidString)", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: directory) }

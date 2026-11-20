@@ -217,7 +217,7 @@ struct LibraryDeletionTests {
 
     @Test("Upgrade from v19 backs up the old database before repairing it")
     func migrationBackup() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = TestRunResources.directory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let path = root.appendingPathComponent("NyaEH.sqlite").path
@@ -282,7 +282,7 @@ struct LibraryDeletionTests {
 
     @Test("Backup failure stops the migration before historical groups are modified")
     func backupFailureStopsMigration() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let root = TestRunResources.directory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let path = root.appendingPathComponent("NyaEH.sqlite").path

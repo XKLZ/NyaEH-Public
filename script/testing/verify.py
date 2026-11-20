@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import plistlib
 import shutil
+import stat
 import struct
 import subprocess
 import sys
@@ -19,42 +20,15 @@ import uuid
 import zipfile
 import zlib
 
+from owned_files import atomic_json, canonical, directory_lock, owned_identity, same_identity
+import owned_runs
+
 ROOT = Path(__file__).resolve().parents[2]
 BASE = ROOT / '.nyaeh-verification'
 SESSIONS = BASE / 'sessions'
 REPORTS = BASE / 'reports'
 HELPER = BASE / 'tools/host'
 PREFIX = 'dev.gazelee.NyaEH.qa.'
-
-
-def canonical(path):
-    path = Path(path)
-    if not path.is_absolute() or path != path.resolve():
-        raise RuntimeError(f'Non-canonical or symlink path: {path}')
-    return path
-
-
-def owned_identity(path):
-    p = canonical(path)
-    s = p.stat()
-    if s.st_uid != os.getuid():
-        raise RuntimeError(f'Not owned by current user: {p}')
-    return {'path': str(p), 'device': s.st_dev, 'inode': s.st_ino}
-
-
-def same_identity(record):
-    try:
-        current = owned_identity(record['path'])
-        return current == {k: record[k] for k in current}
-    except FileNotFoundError:
-        return True
-
-
-def atomic_json(path, value):
-    path = Path(path)
-    temp = path.with_suffix('.new')
-    temp.write_text(json.dumps(value, indent=2, ensure_ascii=False))
-    temp.replace(path)
 
 
 def save(s):
@@ -79,12 +53,18 @@ def load(session):
     return s
 
 
-def run(command, log=None, env=None):
+class CommandFailed(RuntimeError):
+    def __init__(self, code, log):
+        super().__init__(f'Command failed ({code}); see {log}')
+        self.code = code
+
+
+def run(command, log=None, env=None, pass_fds=()):
     if log:
         with open(log, 'a') as output:
-            result = subprocess.run([str(x) for x in command], cwd=ROOT, env=env, stdout=output, stderr=subprocess.STDOUT)
+            result = subprocess.run([str(x) for x in command], cwd=ROOT, env=env, stdout=output, stderr=subprocess.STDOUT, pass_fds=pass_fds)
         if result.returncode:
-            raise RuntimeError(f'Command failed ({result.returncode}); see {log}')
+            raise CommandFailed(result.returncode, log)
     else:
         subprocess.run([str(x) for x in command], cwd=ROOT, env=env, check=True)
 
@@ -94,10 +74,13 @@ def helper(*args):
 
 
 def ensure_helper():
-    HELPER.parent.mkdir(parents=True, exist_ok=True)
     source = ROOT / 'script/testing/host.swift'
-    if not HELPER.exists() or HELPER.stat().st_mtime < source.stat().st_mtime:
-        run(['swiftc', source, '-o', HELPER])
+    with directory_lock(HELPER.parent):
+        if not HELPER.exists() or HELPER.stat().st_mtime < source.stat().st_mtime:
+            with tempfile.TemporaryDirectory(dir=HELPER.parent) as stage:
+                candidate = Path(stage) / 'host'
+                run(['swiftc', source, '-o', candidate])
+                candidate.replace(HELPER)
 
 
 def apps(s):
@@ -113,6 +96,7 @@ def stop(s):
         helper('stop', s['app'], s['bundleID'], app['pid'], app['started'], 10)
     if apps(s):
         raise RuntimeError('Application is still running')
+    return bool(running)
 
 
 def resource(s, path):
@@ -270,34 +254,101 @@ def clean_trash(s):
 
 def report(s):
     REPORTS.mkdir(parents=True, exist_ok=True)
-    fields = ['id', 'name', 'host', 'created', 'finished', 'status', 'build', 'tests', 'startup', 'ui', 'cleanup', 'issues', 'localResign', 'testSummary']
+    fields = ['id', 'name', 'host', 'created', 'finished', 'status', 'build', 'tests', 'startup', 'ui', 'cleanup', 'issues', 'localResign', 'testSummary', 'testExitCode', 'testFailure', 'unitLog']
     atomic_json(REPORTS / (s['id'] + '.json'), {k: s.get(k) for k in fields})
 
 
-def remove_preferences(s):
-    path = Path.home() / 'Library/Preferences' / (s['suite'] + '.plist')
-    before = owned_identity(path) if path.exists() else None
-    contents = path.read_bytes() if before else None
-    if helper('preferences-delete', s['suite']) != 'cleared':
+def preference_path(domain):
+    return Path.home() / 'Library/Preferences' / (domain + '.plist')
+
+
+def preference_snapshot(path):
+    canonical(path.parent)
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return None
+    with os.fdopen(fd, 'rb') as f:
+        identity = os.fstat(f.fileno())
+        if not stat.S_ISREG(identity.st_mode) or identity.st_uid != os.getuid() or identity.st_nlink != 1:
+            raise RuntimeError(f'Unexpected preference file identity: {path.name}')
+        return identity.st_dev, identity.st_ino, f.read()
+
+
+def discard_snapshot(path, snapshot):
+    latest = preference_snapshot(path)
+    if latest is None:
+        return
+    if latest != snapshot:
+        raise RuntimeError(f'Preference identity or contents changed: {path.name}')
+    path.unlink(missing_ok=True)
+
+
+def remove_domains(domains):
+    if not domains:
+        return
+    paths = [preference_path(d) for d in domains]
+    before = {path: preference_snapshot(path) for path in paths}
+    if helper('preferences-delete', *domains) != 'cleared':
         raise RuntimeError('Preference backend did not confirm domain removal')
-    # cfprefsd may retain its previous on-disk snapshot after the domain is cleared.
-    # Only that exact owned snapshot or its empty replacement belongs to cleanup.
-    if path.exists():
-        current = owned_identity(path)
-        data = path.read_bytes()
-        if plistlib.loads(data) and not (current == before and data == contents):
-            raise RuntimeError('Preference file changed during cleanup')
-        if not same_identity(current): raise RuntimeError('Preference identity changed during cleanup')
-        path.unlink()
+    for path in paths:
+        snapshot = preference_snapshot(path)
+        if snapshot is None:
+            continue
+        # A cleared domain can still have its old snapshot or an empty replacement on disk.
+        if plistlib.loads(snapshot[2]) != {} and snapshot != before[path]:
+            raise RuntimeError(f'Preference file changed during cleanup: {path.name}')
+        discard_snapshot(path, snapshot)
+
+
+# AppKit and cfprefsd have independent writeback schedules. Recheck the entire
+# registered batch at 1, 5 and 15 seconds; a later write still has a 30-day receipt.
+QA_EXIT_SETTLE_SECONDS = 15
+PREFERENCE_RECHECK_DELAYS = (1, 4, 10)
+
+
+def check_delayed_snapshots(domains):
+    paths = [preference_path(domain) for domain in domains]
+    for delay in PREFERENCE_RECHECK_DELAYS:
+        time.sleep(delay)
+        for path in paths:
+            snapshot = preference_snapshot(path)
+            if snapshot is not None:
+                if plistlib.loads(snapshot[2]) != {}:
+                    raise RuntimeError(f'Preferences changed after synchronization: {path.name}')
+                discard_snapshot(path, snapshot)
+
+
+def clear_unit_domains(domains, recheck):
+    if recheck:
+        domains = [d for d in domains if os.path.lexists(preference_path(d))]
+    if domains:
+        ensure_helper()
+        remove_domains(domains)
+        check_delayed_snapshots(domains)
+
+
+def remove_preferences(s):
+    remove_domains([s['suite']])
 
 
 def cleanup(s):
-    stop(s)
+    stopped_now = stop(s)
     errors = clean_trash(s)
     # Never remove the journal that is required to retry an uncleaned Trash item.
     if errors:
         s['cleanup'] = 'incomplete'; s['issues'] = errors; save(s); report(s); return
-    try: remove_preferences(s)
+    try:
+        if s.get('process'):
+            # AppKit can publish window state after the host has disappeared from
+            # NSWorkspace. Let that last write land before clearing its domain.
+            stopped_at = time.time() if stopped_now else s.get('finished', 0)
+            remaining = QA_EXIT_SETTLE_SECONDS - max(0, time.time() - stopped_at)
+            if remaining > 0:
+                time.sleep(remaining)
+        remove_preferences(s)
+        if s.get('process'):
+            check_delayed_snapshots([s['suite']])
     except Exception as error:
         s['cleanup'] = 'incomplete'; s['issues'] = [str(error)]; save(s); report(s); return
     registered = {r['path'] for r in s['resources']}
@@ -314,19 +365,87 @@ def cleanup(s):
     s['issues'] = errors; save(s); report(s)
 
 
+def finish_failed_unit_stage(s):
+    # Commit the log and exit status before disposing of the unused QA scaffolding.
+    log = SESSIONS / s['id'] / 'unit-tests.log'
+    source = canonical(Path(s['log']))
+    if 'unitLog' not in s:
+        if os.path.lexists(log):
+            raise RuntimeError(f'Unregistered unit output: {log}')
+        s['unitLog'] = dict(owned_identity(source), path=str(log))
+        save(s)
+    expected = s['unitLog']
+    if expected['path'] != str(log):
+        raise RuntimeError('Invalid unit output path')
+    if not os.path.lexists(log):
+        if owned_identity(source) != dict(expected, path=str(source)):
+            raise RuntimeError('Unit test output changed before retention')
+        source.rename(log)
+    if owned_identity(log) != expected:
+        raise RuntimeError(f'Replaced unit test output: {log}')
+    s['tests'] = 'failed'
+    save(s); report(s)
+    clean_failed_unit_resources(s)
+
+
+def clean_failed_unit_resources(s):
+    try:
+        owned_runs.finish_session_units(BASE, s['id'], clear_unit_domains)
+    except Exception as error:
+        unit_issue = str(error)
+    else:
+        unit_issue = None
+    cleanup(s)
+    if unit_issue:
+        s['cleanup'] = 'incomplete'
+        s['issues'].append(unit_issue)
+        save(s); report(s)
+
+
 def expire():
+    owned_runs.collect(BASE, clear_unit_domains)
     now = time.time()
     for f in SESSIONS.glob('*/session.json'):
         s = load(f.parent.name)
         if apps(s): continue
         if s['status'] == 'preparing':
             s.update(status='interrupted', finished=s['created']); save(s); report(s)
+        if s.get('tests') == 'running':
+            finish_failed_unit_stage(s)
+        elif 'unitLog' in s and s.get('cleanup') != 'complete':
+            clean_failed_unit_resources(s)
         age = now - s.get('finished', s['created'])
-        if s.get('cleanup') != 'complete' and age >= 7 * 86400: cleanup(s)
+        late_preferences = s.get('cleanup') == 'complete' and os.path.lexists(preference_path(s['suite']))
+        if late_preferences or s.get('preferenceRetry'):
+            try:
+                remove_preferences(s)
+                check_delayed_snapshots([s['suite']])
+                if os.path.lexists(preference_path(s['suite'])):
+                    raise RuntimeError('QA preferences reappeared during reconciliation')
+                if s.pop('preferenceRetry', False):
+                    s.update(cleanup='complete', issues=[]); save(s); report(s)
+            except Exception as error:
+                s.update(cleanup='incomplete', preferenceRetry=True, issues=[str(error)])
+                save(s); report(s)
+                continue
+        elif s.get('cleanup') != 'complete' and age >= 7 * 86400:
+            cleanup(s)
         if s.get('cleanup') == 'complete' and age >= 30 * 86400:
+            if 'unitLog' in s:
+                log = f.parent / 'unit-tests.log'
+                if s['unitLog']['path'] != str(log) or not same_identity(s['unitLog']):
+                    s['issues'] = ['Retained replaced unit test log']; save(s); report(s)
+                    continue
+                log.unlink(missing_ok=True)
+            compact = REPORTS / (s['id'] + '.json')
+            if os.path.lexists(compact):
+                identity = owned_identity(compact)
+                contents = json.loads(compact.read_bytes())
+                if any(contents.get(k) != s[k] for k in ('id', 'created', 'host')) or not same_identity(identity):
+                    print(f'Retained mismatched report: {compact}', file=sys.stderr)
+                else:
+                    compact.unlink()
             f.unlink(); f.parent.rmdir()
-    for p in REPORTS.glob('*.json'):
-        if now - p.stat().st_mtime >= 30 * 86400: p.unlink()
 
 
 @contextlib.contextmanager
@@ -335,7 +454,7 @@ def lock():
     with open(BASE / 'lock', 'a') as f:
         try: fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError: raise RuntimeError('Another verification command owns this workspace')
-        yield
+        yield f
 
 
 def new_session(sandbox):
@@ -459,6 +578,13 @@ def replace_development_app(s, launch_file):
 
 
 def main():
+    if sys.argv[1:2] == ['scratch']:
+        if sys.argv[2:3] != ['--'] or not sys.argv[3:]:
+            raise ValueError('usage: verify.sh scratch -- COMMAND [ARG ...]')
+        with lock():
+            ensure_helper()
+            expire()
+        return owned_runs.scratch(BASE, ROOT, sys.argv[3:])
     parser = argparse.ArgumentParser()
     parser.add_argument('command', nargs='?', default='run', choices=['run', 'dev', 'status', 'finish', 'restart', 'cleanup'])
     parser.add_argument('value', nargs='?')
@@ -466,7 +592,7 @@ def main():
     parser.add_argument('--startup-only', action='store_true'); parser.add_argument('--expired', action='store_true')
     result = parser.add_mutually_exclusive_group(); result.add_argument('--passed', action='store_true'); result.add_argument('--failed', action='store_true')
     args = parser.parse_args()
-    with lock():
+    with lock() as workspace_lock:
         ensure_helper(); SESSIONS.mkdir(exist_ok=True); REPORTS.mkdir(exist_ok=True)
         expire()
         if args.command == 'dev': dev(args.value or 'run'); return
@@ -505,7 +631,11 @@ def main():
         try:
             if not args.startup_only:
                 run(['swift', 'build'], s['log'], environment(s)); s['build'] = 'passed'; save(s)
-                run(['swift', 'test'], s['log'], environment(s)); s['tests'] = 'passed'
+                s['tests'] = 'running'; save(s)
+                run(['swift', 'test'], s['log'], environment(s), pass_fds=(workspace_lock.fileno(),))
+                s['testExitCode'] = 0; save(s)
+                owned_runs.finish_session_units(BASE, s['id'], clear_unit_domains)
+                s['tests'] = 'passed'
                 summaries = [line.strip() for line in Path(s['log']).read_text().splitlines() if 'Test run with ' in line]
                 s['testSummary'] = summaries[-1] if summaries else 'swift test exited successfully'; save(s)
                 run([sys.executable, '-m', 'unittest', 'discover', '-s', 'script/testing', '-p', 'test_*.py'], s['log']); save(s)
@@ -521,7 +651,17 @@ def main():
                 print(f'Session {s["id"]}: passed; cleanup {s["cleanup"]}')
                 if s['cleanup'] != 'complete': raise RuntimeError('Cleanup incomplete; see session report')
         except BaseException as error:
-            s.update(status='interrupted' if isinstance(error, KeyboardInterrupt) else 'failed', finished=time.time(), issues=[str(error)])
+            issues = list(s.get('issues', []))
+            if str(error) not in issues:
+                issues.append(str(error))
+            s.update(status='interrupted' if isinstance(error, KeyboardInterrupt) else 'failed', finished=time.time(), issues=issues)
+            if s.get('tests') == 'running':
+                s['testFailure'] = str(error)
+                s['testExitCode'] = s.get('testExitCode', getattr(error, 'code', 130 if isinstance(error, KeyboardInterrupt) else None))
+                save(s)
+                finish_failed_unit_stage(s)
+                print(f'Swift tests {s["status"]}; log: {s["unitLog"]["path"]}; cleanup {s["cleanup"]}', file=sys.stderr)
+                raise
             try: stop(s)
             except Exception as stop_error: s['issues'].append(str(stop_error))
             save(s); report(s)
@@ -530,6 +670,8 @@ def main():
 
 
 if __name__ == '__main__':
-    try: main()
+    try: sys.exit(main())
+    except CommandFailed as error:
+        print(str(error), file=sys.stderr); sys.exit(error.code if error.code > 0 else 128 - error.code)
     except Exception as error:
         print(str(error), file=sys.stderr); sys.exit(1)

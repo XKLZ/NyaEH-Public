@@ -82,7 +82,7 @@ struct ImportWebInfoPipelineTests {
     }
 
     private func makeFixture(webInfo: String?, preferredURL: String? = nil) throws -> Fixture {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let root = TestRunResources.directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let archiveURL = root.appendingPathComponent("sample.cbz")
         let archive = try Archive(url: archiveURL, accessMode: .create)

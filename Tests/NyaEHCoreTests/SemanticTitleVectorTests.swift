@@ -348,7 +348,7 @@ struct SemanticTitleVectorTests {
     }
 
     private func makeRepository() throws -> SQLiteSemanticTitleVectorRepository {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return try SQLiteSemanticTitleVectorRepository(

@@ -679,7 +679,7 @@ struct TagTranslationTests {
 
     @Test("tag image cache ignores unsupported urls")
     func tagImageCacheIgnoresUnsupportedURLs() async throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let service = TagImageCacheService(rootURLProvider: { directory })
 
@@ -699,7 +699,7 @@ struct TagTranslationTests {
             tagsJSON: #"["female:lolicon"]"#
         )
 
-        let appDataRoot = FileManager.default.temporaryDirectory
+        let appDataRoot = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let database = tagTranslationDatabaseData(
             entries: """
@@ -749,7 +749,7 @@ struct TagTranslationTests {
             tagsJSON: #"["female:lolicon"]"#
         )
 
-        let appDataRoot = FileManager.default.temporaryDirectory
+        let appDataRoot = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let service = EhTagTranslationUpdateService(
             appDataRoot: appDataRoot,
@@ -794,7 +794,7 @@ struct TagTranslationTests {
             tagsJSON: #"["female:lolicon"]"#
         )
 
-        let appDataRoot = FileManager.default.temporaryDirectory
+        let appDataRoot = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let service = EhTagTranslationUpdateService(
             appDataRoot: appDataRoot,
@@ -838,7 +838,7 @@ struct TagTranslationTests {
     }
 
     private func makeContext() throws -> RepositoryContext {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let database = try DatabaseManager(path: directory.appendingPathComponent("NyaEH.sqlite").path)

@@ -189,7 +189,7 @@ struct ExternalLibraryImportServiceTests {
     }
 
     private func makeContext() throws -> ImportRepositoryContext {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let appDataURL = directory.appendingPathComponent("AppData", isDirectory: true)
         try FileManager.default.createDirectory(at: appDataURL, withIntermediateDirectories: true)

@@ -5,7 +5,7 @@ import Testing
 @Suite("Test host isolation")
 struct TestRuntimeTests {
     private func fixture() throws -> (URL, [String: String], [String: Any]) {
-        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(UUID().uuidString)
+        let root = TestRunResources.directory.resolvingSymlinksInPath().appendingPathComponent(UUID().uuidString)
         let data = root.appendingPathComponent(".nyaeh-dev/Application Support/NyaEH")
         let source = root.appendingPathComponent(".nyaeh-dev/comic")
         try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)

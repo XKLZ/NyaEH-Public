@@ -1439,7 +1439,7 @@ struct AppPreferencesTests {
     @Test("app data directory migrates the old production directory")
     func appDataDirectoryMigratesLegacyProductionData() throws {
         let fileManager = FileManager.default
-        let supportDirectory = fileManager.temporaryDirectory
+        let supportDirectory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
             .appendingPathComponent("Application Support", isDirectory: true)
         let legacyDirectory = supportDirectory.appendingPathComponent(LegacyNaming.applicationSupportDirectory, isDirectory: true)
@@ -1464,7 +1464,7 @@ struct AppPreferencesTests {
 
     @Test("app data directory uses environment override")
     func appDataDirectoryUsesEnvironmentOverride() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
 
         let root = try AppDataDirectory.rootURL(
@@ -1490,10 +1490,9 @@ struct AppPreferencesTests {
     @Test("preferences persist through user defaults")
     @MainActor
     func preferencesPersistThroughUserDefaults() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
-        let languageDomain = "com.nyaeh.test.language.\(UUID().uuidString)"
+        let languageDomain = TestRunResources.newDefaultsDomain()
         let languageDefaults = UserDefaults(suiteName: languageDomain)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -1528,8 +1527,7 @@ struct AppPreferencesTests {
     @Test("last library scan timestamp persists through user defaults")
     @MainActor
     func lastLibraryScanTimestampPersistsThroughUserDefaults() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -1549,8 +1547,7 @@ struct AppPreferencesTests {
     @Test("card width preferences default normalize and persist")
     @MainActor
     func cardWidthPreferencesDefaultNormalizeAndPersist() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -1578,8 +1575,7 @@ struct AppPreferencesTests {
     @Test("cover similarity distance defaults clamps and persists")
     @MainActor
     func coverSimilarityDistanceDefaultsClampsAndPersists() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -1601,8 +1597,7 @@ struct AppPreferencesTests {
     @Test("accent color preferences default and persist")
     @MainActor
     func accentColorPreferencesDefaultAndPersist() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -1630,8 +1625,7 @@ struct AppPreferencesTests {
     @Test("invalid custom accent color falls back safely")
     @MainActor
     func invalidCustomAccentColorFallsBackSafely() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -1651,8 +1645,7 @@ struct AppPreferencesTests {
     @Test("tag translation display is disabled by default")
     @MainActor
     func tagTranslationDisplayIsDisabledByDefault() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -1665,8 +1658,7 @@ struct AppPreferencesTests {
     @Test("book title display mode defaults to original title")
     @MainActor
     func bookTitleDisplayModeDefaultsToOriginalTitle() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -1679,8 +1671,7 @@ struct AppPreferencesTests {
     @Test("reader initial load limit defaults persists and snaps")
     @MainActor
     func readerInitialLoadLimitDefaultsPersistsAndSnaps() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -1703,8 +1694,7 @@ struct AppPreferencesTests {
     @Test("reader hover preview delay defaults persists and snaps")
     @MainActor
     func readerHoverPreviewDelayDefaultsPersistsAndSnaps() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -1727,8 +1717,7 @@ struct AppPreferencesTests {
     @Test("reader display preferences default persist and recover invalid values")
     @MainActor
     func readerDisplayPreferencesDefaultPersistAndRecoverInvalidValues() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -1777,8 +1766,8 @@ struct AppPreferencesTests {
     @Test("reader display preferences use the configured development suite")
     @MainActor
     func readerDisplayPreferencesUseConfiguredDevelopmentSuite() {
-        let suiteName = "com.nyaeh.test.reader-display.\(UUID().uuidString)"
-        let isolatedSuiteName = "com.nyaeh.test.reader-display.isolated.\(UUID().uuidString)"
+        let suiteName = TestRunResources.newDefaultsDomain()
+        let isolatedSuiteName = TestRunResources.newDefaultsDomain()
         defer {
             UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
             UserDefaults(suiteName: isolatedSuiteName)?.removePersistentDomain(forName: isolatedSuiteName)
@@ -1814,8 +1803,8 @@ struct AppPreferencesTests {
     @Test("reader window frame persists in its configured suite and ignores damaged values")
     @MainActor
     func readerWindowFramePersistsInConfiguredSuite() {
-        let developmentSuite = "com.nyaeh.test.reader-frame.development.\(UUID().uuidString)"
-        let productionSuite = "com.nyaeh.test.reader-frame.production.\(UUID().uuidString)"
+        let developmentSuite = TestRunResources.newDefaultsDomain()
+        let productionSuite = TestRunResources.newDefaultsDomain()
         defer {
             UserDefaults(suiteName: developmentSuite)?.removePersistentDomain(forName: developmentSuite)
             UserDefaults(suiteName: productionSuite)?.removePersistentDomain(forName: productionSuite)
@@ -1849,8 +1838,8 @@ struct AppPreferencesTests {
     @Test("main-window size and sidebar width persist in the configured suite")
     @MainActor
     func mainWindowGeometryPersistsInConfiguredSuite() throws {
-        let suite = "com.nyaeh.test.main-window.\(UUID())"
-        let otherSuite = "\(suite).other"
+        let suite = TestRunResources.newDefaultsDomain()
+        let otherSuite = TestRunResources.newDefaultsDomain()
         let defaults = try #require(UserDefaults(suiteName: suite))
         let otherDefaults = try #require(UserDefaults(suiteName: otherSuite))
         defer {
@@ -1902,7 +1891,7 @@ struct AppPreferencesTests {
     @Test("only a user drag on the visible main sidebar saves its width")
     @MainActor
     func mainSidebarWidthIgnoresWindowLayoutAndHiddenSidebar() throws {
-        let suite = "com.nyaeh.test.main-sidebar.\(UUID())"
+        let suite = TestRunResources.newDefaultsDomain()
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let preferences = AppPreferences(userDefaults: defaults, credentialStore: InMemoryCredentialStore())
@@ -1943,8 +1932,7 @@ struct AppPreferencesTests {
     @Test("pagination defaults persist and snap")
     @MainActor
     func paginationDefaultsPersistAndSnap() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -1981,8 +1969,7 @@ struct AppPreferencesTests {
     @Test("management page size changes publish on page one and persist independently", arguments: [true, false])
     @MainActor
     func managementCandidatePageSizePublishesObservationChanges(isSeries: Bool) {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let preferences = AppPreferences(userDefaults: defaults, credentialStore: InMemoryCredentialStore())
@@ -2027,8 +2014,7 @@ struct AppPreferencesTests {
     @Test("advanced search page size publishes observation changes")
     @MainActor
     func advancedSearchPageSizePublishesObservationChanges() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -2051,8 +2037,7 @@ struct AppPreferencesTests {
     @Test("saved searches replace duplicates and delete through atomic updates")
     @MainActor
     func savedSearchesReplaceDuplicatesAndDeleteThroughAtomicUpdates() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -2093,8 +2078,7 @@ struct AppPreferencesTests {
     @Test("advanced search facet panel expansion persists")
     @MainActor
     func advancedSearchFacetPanelExpansionPersists() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -2112,9 +2096,8 @@ struct AppPreferencesTests {
     @Test("series and version candidate pane visibility persists independently")
     @MainActor
     func managementCandidatePaneVisibilityPersists() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        let otherSuiteName = "com.nyaeh.test.management-panes.\(UUID().uuidString)"
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
+        let otherSuiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -2146,8 +2129,7 @@ struct AppPreferencesTests {
     @Test("advanced search header pinning persists")
     @MainActor
     func advancedSearchHeaderPinningPersists() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -2165,8 +2147,7 @@ struct AppPreferencesTests {
     @Test("advanced search collection member expansion persists")
     @MainActor
     func advancedSearchCollectionMemberExpansionPersists() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -2184,8 +2165,7 @@ struct AppPreferencesTests {
     @Test("home insight chart expansion persists")
     @MainActor
     func homeInsightChartExpansionPersists() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -2380,8 +2360,7 @@ struct AppPreferencesTests {
     @Test("metadata batch preferences default and persist")
     @MainActor
     func metadataBatchPreferencesDefaultAndPersist() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -2417,8 +2396,7 @@ struct AppPreferencesTests {
     @Test("proxy preferences default persist and normalize")
     @MainActor
     func proxyPreferencesDefaultPersistAndNormalize() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -2446,8 +2424,7 @@ struct AppPreferencesTests {
     @Test("default user defaults can use environment suite")
     @MainActor
     func defaultUserDefaultsCanUseEnvironmentSuite() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         defer {
             UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
         }
@@ -2463,7 +2440,7 @@ struct AppPreferencesTests {
 
     @Test("development credential store reads writes and removes plaintext credentials")
     func developmentCredentialStoreReadsWritesAndRemovesPlaintextCredentials() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = FileCredentialStore(appDataRoot: directory)
@@ -2493,7 +2470,7 @@ struct AppPreferencesTests {
 
     @Test("credential store factory uses development plaintext when requested")
     func credentialStoreFactoryUsesDevelopmentPlaintextWhenRequested() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let store = CredentialStoreFactory.appDefault(
             environment: [
@@ -2507,7 +2484,7 @@ struct AppPreferencesTests {
 
     @Test("credential store factory defaults to local file")
     func credentialStoreFactoryDefaultsToLocalFile() {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let directory = TestRunResources.directory.appendingPathComponent(UUID().uuidString)
         let store = CredentialStoreFactory.appDefault(environment: [AppDataDirectory.overrideEnvironmentKey: directory.path])
 
         #expect(store is FileCredentialStore)
@@ -2516,8 +2493,7 @@ struct AppPreferencesTests {
     @Test("credentials persist through credential store")
     @MainActor
     func credentialsPersistThroughCredentialStore() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         let credentialStore = InMemoryCredentialStore()
         defer {
@@ -2541,10 +2517,9 @@ struct AppPreferencesTests {
     @Test("legacy defaults are not read during file credential setup")
     @MainActor
     func legacyCredentialsAreNotReadDuringFileCredentialSetup() throws {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let credentialStore = FileCredentialStore(appDataRoot: directory)
         defer {
@@ -2563,8 +2538,7 @@ struct AppPreferencesTests {
     @Test("old credential keys are ignored")
     @MainActor
     func legacyUserDefaultsCredentialsAreIgnored() {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         let credentialStore = InMemoryCredentialStore()
         defer {
@@ -2588,14 +2562,13 @@ struct AppPreferencesTests {
     @Test("library root path persists through user defaults")
     @MainActor
     func libraryRootPathPersistsThroughUserDefaults() throws {
-        let suiteName = TestPreferencesHelper.Suite.appPreferences
-        TestPreferencesHelper.resetDomain(named: suiteName)
+        let suiteName = TestRunResources.newDefaultsDomain()
         let defaults = UserDefaults(suiteName: suiteName)!
         defer {
             defaults.removePersistentDomain(forName: suiteName)
         }
 
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestRunResources.directory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
