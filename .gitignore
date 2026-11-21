@@ -19,4 +19,5 @@ Tests/sqlite_replace_field.py
 .nyaeh-verification/
 xcuserdata/
 *.xcuserstate
-script/testing/__pycache__/
+__pycache__/
+*.py[cod]

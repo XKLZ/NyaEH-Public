@@ -3,9 +3,9 @@ set -euo pipefail
 umask 077
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 WORK="$(mktemp -d /private/tmp/nyaeh-public-build.XXXXXX)"
-DEST="${1:-/private/tmp/NyaEH-Public-1.5.1-151.app.zip}"
-VERSION=1.5.1
-BUILD=151
+DEST="${1:-/private/tmp/NyaEH-Public-1.6.0-160.app.zip}"
+VERSION=1.6.0
+BUILD=160
 cleanup() {
   result=$?
   if [[ "$result" != 0 && "${NYAEH_KEEP_FAILED_BUILD:-0}" == 1 ]]; then

@@ -63,6 +63,8 @@ def check(entries, prefixes):
     count = 0
     for path, payload in entries:
         count += 1
+        if "__pycache__" in path.parts or path.suffix.lower() in {".pyc", ".pyo", ".pyd"}:
+            raise ValueError(f"Python cache payload at entry #{count}")
         if (
             set(path.parts) & {"Booklib", "cover_distance", "importTest", "xcuserdata"}
             or path.suffix.lower() in {".zip", ".cbz", ".sqlite", ".db", ".nyaehbackup", ".p12", ".mobileprovision"}

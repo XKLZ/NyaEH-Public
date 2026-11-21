@@ -1,5 +1,6 @@
 # Agent Log
 
+- Ordinary public releases are not prereleases. Verify the draft asset before publication, then sign and push the feed separately. Source and ZIP audits now reject Python caches, which can embed local build paths; release type does not imply Apple notarization.
 - The public Xcode shell uses a layered Icon Composer AppIcon. The candidate builder rejects bundles missing its compiled icon files or icon metadata.
 - This snapshot starts a new public history. Tests must generate their fixtures; do not import private data or historical release assets.
 - The standalone packaging project lives in `Packaging/NyaEH`. Public updates are anonymous and must never access the private channel's saved token.

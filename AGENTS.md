@@ -194,4 +194,6 @@ For release packaging checks, use the same project and scheme with `-configurati
 
 Build a local public candidate with `./script/build_public_candidate.sh` after setting `NYAEH_SPARKLE_PUBLIC_KEY`. This command must never publish or upload. Keep tests synthetic; do not add test databases, source archives, personal credentials or private release assets to history.
 
+Public source and ZIP audits must reject Python bytecode and cache directories as well as private data. For an authorized ordinary release, verify the uploaded draft ZIP before publishing it as Latest, then sign and push the new appcast entry in a separate commit. Preserve historical releases and tags, the public signing key, and the signing/notarization disclosure appropriate to the actual bundle.
+
 For documentation-only changes, reading the edited files and checking `git diff --stat` is enough unless code behavior was also touched.

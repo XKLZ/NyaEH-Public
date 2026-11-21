@@ -81,7 +81,7 @@ xcodebuild -project Packaging/NyaEH/NyaEH.xcodeproj -scheme NyaEH -configuration
 Release 构建可使用Xcode shell；默认版本写在 Xcode project 中，也可以在命令行覆盖：
 
 ```bash
-xcodebuild -project Packaging/NyaEH/NyaEH.xcodeproj -scheme NyaEH -configuration Release build MARKETING_VERSION=1.5.1 CURRENT_PROJECT_VERSION=151
+xcodebuild -project Packaging/NyaEH/NyaEH.xcodeproj -scheme NyaEH -configuration Release build MARKETING_VERSION=1.6.0 CURRENT_PROJECT_VERSION=160
 ```
 
 ## 本地发行候选
@@ -89,16 +89,16 @@ xcodebuild -project Packaging/NyaEH/NyaEH.xcodeproj -scheme NyaEH -configuration
 将独立公开更新签名密钥对应的公钥通过 `NYAEH_SPARKLE_PUBLIC_KEY` 提供给构建脚本。私钥留在 Keychain 中，不导出或提交。
 
 ```bash
-./script/build_public_candidate.sh /private/tmp/NyaEH-Public-1.5.1.app.zip
+./script/build_public_candidate.sh /private/tmp/NyaEH-Public-1.6.0-160.app.zip
 ```
 
-脚本只在本机构建、裁剪、ad-hoc 签名、校验和打包，不负责上传或公证。打包前会检查 Xcode 已编译分层图标 `AppIcon.icon`，且包内图标字段和资源齐全。1.5.1 是明确标注未公证的公开预览；正式分发另行完成 Developer ID 签名和 Apple 公证。
+脚本只在本机构建、裁剪、ad-hoc 签名、校验和打包，不负责上传或公证。打包前会检查 Xcode 已编译分层图标 `AppIcon.icon`，且包内图标字段和资源齐全。当前默认版本为 1.6.0（build 160）；修改发布版本时同步更新 Xcode 工程、脚本和更新日志。GitHub 普通 Release 不代表通过 Apple 公证；当前包仍为 ad-hoc 签名，须保留未公证提示。Developer ID 签名和 Apple 公证另行完成。
 
 ### 发布公开更新
 
 1. 使用公开版独立密钥签署最终 ZIP，保存签名、长度、SHA-256、版本和构建号。签署后不要重打包。公开密钥与 App 内的 `SUPublicEDKey` 必须一致。
 2. 先上传新 ZIP 到公开版仓库的对应 Release，验证下载字节与本地一致。再按发布版本生成更新记录，使用 Release 资产的公开下载 URL，不使用带令牌的 API 地址。
-3. 更新并重签 `updates/appcast.xml`，确认签名有效再推送。对这次首次发布，可以先在私有阶段准备更新清单，等 Release 完整后再公开仓库。
+3. 先创建草稿 Release 并上传、下载验证 ZIP，再发布为普通 Release 并设为 Latest（不勾选预览版）。随后在 `updates/appcast.xml` 顶部加入新版本，保留历史条目，重新签署并验签后提交推送，避免更新源先指向不可下载的资产。tag 指向发布准备提交，更新源使用后续独立提交；不要修改已发布 ZIP、重用 tag 或覆盖旧资产。
 4. 用不带 `Authorization` 的请求验证 GitHub Contents API、raw 更新清单和 Release ZIP。比较下载到的清单与签名版本，并核对 ZIP 的 SHA-256、大小和构建号。完整自动升级要用已安装的较低公开版本做隔离测试。
 
 签署清单时使用公开版的 Keychain 账户：

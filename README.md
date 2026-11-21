@@ -7,7 +7,7 @@
 <p align="center">NyaEH 是一款 macOS 本地漫画书库管理器。选一个文件夹，就能搜索、整理和阅读你的漫画，原文件留在原处。</p>
 
 <p align="center">
-  <strong><a href="https://github.com/XKLZ/NyaEH-Public/releases/tag/1.5.1">下载 1.5.1 预览版</a></strong> ·
+  <strong><a href="https://github.com/XKLZ/NyaEH-Public/releases/latest">下载最新版本</a></strong> ·
   <a href="docs/user-guide.md">使用指南</a> ·
   <a href="CHANGELOG.md">更新日志</a>
 </p>
@@ -15,7 +15,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/macOS-26%2B-4D315B?style=flat-square&amp;logo=apple" alt="macOS 26 或更新版本">
   <img src="https://img.shields.io/badge/%E6%9E%B6%E6%9E%84-Apple%20%E8%8A%AF%E7%89%87-4D315B?style=flat-square" alt="Apple 芯片">
-  <a href="https://github.com/XKLZ/NyaEH-Public/releases"><img src="https://img.shields.io/github/v/release/XKLZ/NyaEH-Public?include_prereleases&amp;style=flat-square&amp;label=%E9%A2%84%E8%A7%88%E7%89%88&amp;color=4D315B" alt="GitHub 预览版"></a>
+  <a href="https://github.com/XKLZ/NyaEH-Public/releases/latest"><img src="https://img.shields.io/github/v/release/XKLZ/NyaEH-Public?style=flat-square&amp;label=release&amp;color=4D315B" alt="GitHub 最新版本"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-4D315B?style=flat-square" alt="MIT 许可证"></a>
 </p>
 
@@ -28,13 +28,13 @@
 
 ## 开始使用
 
-1. 从 [1.5.1 版本页](https://github.com/XKLZ/NyaEH-Public/releases/tag/1.5.1) 下载 `.app.zip`，解压后将 `NyaEH.app` 拖到「应用程序」。
+1. 从 [最新版本页](https://github.com/XKLZ/NyaEH-Public/releases/latest) 下载 `.app.zip`，解压后将 `NyaEH.app` 拖到「应用程序」。
 2. 打开「设置 → 书库」，选择存放漫画的文件夹，再点击「扫描书库」。
 3. 在「搜索」里找一本书，打开详情后开始阅读。
 
 只浏览和阅读本地漫画，不需要注册账号。需要时，可另外配置 E-Hentai / ExHentai 获取标题和标签。
 
-> 这是未经过 Apple 公证的预览版。首次打开时，macOS 可能阻止运行。从旧私有版切换到公开版，第一次需要手动安装。
+> 当前安装包未经过 Apple 公证。首次打开时，macOS 可能阻止运行。从旧私有版切换到公开版，第一次需要手动安装。
 
 ## 更多信息
 
