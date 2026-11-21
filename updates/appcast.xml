@@ -6,6 +6,17 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <link>https://github.com/XKLZ/NyaEH-Public/releases</link>
     <description>Signed updates for the public edition of NyaEH.</description>
     <item>
+      <title>NyaEH 1.6.0</title>
+      <link>https://github.com/XKLZ/NyaEH-Public/releases/tag/1.6.0</link>
+      <description>新增分层应用图标，优化搜索与整理、首页与封面隐私、作品角色书架和备份管理。需要 macOS 26 或更新版本及 Apple 芯片。本版未经过 Apple 公证。</description>
+      <pubDate>Sat, 21 Nov 2026 02:54:30 +0000</pubDate>
+      <sparkle:version>160</sparkle:version>
+      <sparkle:shortVersionString>1.6.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <enclosure url="https://github.com/XKLZ/NyaEH-Public/releases/download/1.6.0/NyaEH-Public-1.6.0-160.app.zip" length="9338254" type="application/octet-stream" sparkle:edSignature="tj/sNY2cT1i78PjaYMNCukdghzevrSOJwP/ST5cpt+cffw1cqt1EriWg8cW2jgEVNRuZdB0aYulQnOKqh1a9Aw=="></enclosure>
+    </item>
+    <item>
       <title>NyaEH 1.5.1 Preview</title>
       <link>https://github.com/XKLZ/NyaEH-Public/releases/tag/1.5.1</link>
       <description>First public preview. Requires macOS 26 or later and Apple silicon. This preview is not notarized.</description>
@@ -17,6 +28,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     </item>
   </channel>
 </rss><!-- sparkle-signatures:
-edSignature: I6pFa4jjV1D/uhpzqgsGwtaU8Fa6JuPD9iyVr1h00gJw6tzd0ql64fRrThbuT9v+x2nP3H6SBZyb9MvF/3wgDQ==
-length: 1410
+edSignature: 7raJML97iPyGqnEViaqpJ7wg4NaRBvaLGyvkzWfT134iFl3OazjqvnOM7e3VuaFwnmUYzk1azpsBwo55s6v7DQ==
+length: 2371
 -->
