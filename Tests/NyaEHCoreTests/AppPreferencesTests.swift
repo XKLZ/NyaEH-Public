@@ -803,6 +803,50 @@ struct AppPreferencesTests {
         let hidden = WorkTopicStageLayout(available: 770, underlap: 0)
         #expect(shown.firstCoverX == hidden.firstCoverX + 230)
         #expect(shown.usableShelfWidth == hidden.usableShelfWidth)
+        #expect(shown.backArrowX == shown.panelRight + 18)
+        #expect(shown.backArrowX == hidden.backArrowX + 230)
+        let narrow = WorkTopicStageLayout(available: 420, underlap: 0)
+        #expect(narrow.usableShelfWidth < 300)
+        #expect(narrow.backArrowX == narrow.panelRight + 12)
+    }
+
+    @MainActor @Test("the floating character entry and its placeholder have matching insets during parallax",
+                     arguments: [CGFloat(110), 159, 160, 340])
+    func workTopicNameplatePlacement(width: CGFloat) throws {
+        let character = visualTag(id: 2, namespace: "character", name: "Character")
+        var button: CGRect?
+        var placeholder: CGRect?
+        let height = WorkTopicStageLayout.panelHeight(fields: .all)
+        let glass = WorkTopicCharacterGlass(expansion: 1)
+        let content = ZStack {
+            WorkTopicCharacterCard(character: character, image: nil, expansion: 1) {
+                WorkTopicCharacterNameplate(character: character, bookCount: 7, localizer: .init(language: .zhHans)) { _ in }
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("portrait")) } action: { button = $0 }
+            }
+            glass.overlay {
+                glass.clippedNameplate {
+                    WorkTopicNameplatePlaceholder()
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("portrait")) } action: { placeholder = $0 }
+                }
+            }
+        }
+        .environment(\.workTopicPortraitDirection, CGSize(width: 1, height: -1))
+        .coordinateSpace(name: "portrait")
+        .frame(width: width, height: height)
+        let host = NSHostingView(rootView: content)
+        host.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        host.layoutSubtreeIfNeeded()
+        let deadline = Date(timeIntervalSinceNow: 1)
+        while (button == nil || placeholder == nil) && Date() < deadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+        }
+        let bounds = try #require(button)
+        #expect(bounds == placeholder)
+        let horizontalInset: CGFloat = width < 160 ? 8 : 12
+        #expect(bounds.minX == horizontalInset)
+        #expect(width - bounds.maxX == horizontalInset)
+        #expect(height - bounds.maxY == 14)
+        #expect(bounds.height >= 56)
     }
 
     @MainActor @Test("work topic glass interpolates from the selector to the large panel")
@@ -1107,6 +1151,8 @@ struct AppPreferencesTests {
         let middle = WorkTopicHeaderMetrics(viewportHeight: 800, offset: expanded.travel / 2)
         let compact = WorkTopicHeaderMetrics(viewportHeight: 800, offset: expanded.travel + 30)
         #expect(expanded.progress == 0 && middle.progress == 0.5 && compact.progress == 1)
+        #expect(!expanded.canExpand && middle.canExpand && compact.canExpand)
+        #expect(WorkTopicHeaderMetrics(viewportHeight: 800, offset: 1).canExpand)
         #expect(compact.height == 64 && expanded.artworkOpacity == 1 && compact.artworkOpacity == 0)
         #expect(middle.introductionOpacity < middle.artworkOpacity)
         #expect(compact.introductionOpacity == 0 && compact.searchLabelOpacity == 0)
@@ -1127,6 +1173,18 @@ struct AppPreferencesTests {
             #expect(frames[0][2].maxX <= width * 0.5)
             #expect(!WorkHeroVisualDropRouting.resolve(size: .init(width: width, height: compact.height)).foregroundFrame.isEmpty)
         }
+    }
+
+    @Test("work search highlights keyboard focus and preserves pointer feedback with reduced motion")
+    func workTopicSearchButtonFeedback() {
+        let resting = WorkTopicSearchFeedback(hovered: false, focused: false, pressed: false)
+        let focused = WorkTopicSearchFeedback(hovered: false, focused: true, pressed: false)
+        let hovered = WorkTopicSearchFeedback(hovered: true, focused: true, pressed: false)
+        let pressed = WorkTopicSearchFeedback(hovered: true, focused: true, pressed: true)
+        #expect(focused.edgeOpacity > resting.edgeOpacity && focused.scale(reduceMotion: false) == 1)
+        #expect(hovered.edgeOpacity > resting.edgeOpacity && hovered.scale(reduceMotion: false) > 1)
+        #expect(pressed.edgeOpacity > hovered.edgeOpacity && pressed.scale(reduceMotion: false) < 1)
+        #expect([resting, focused, hovered, pressed].allSatisfy { $0.scale(reduceMotion: true) == 1 })
     }
 
     @MainActor @Test("compact work hero centers the rendered pills and the narrow numeric fallback",
@@ -1391,9 +1449,17 @@ struct AppPreferencesTests {
         let work = LibraryRoute.workDetail(3)
         let book = LibraryRoute.bookDetail("11")
         let state = store.workState(for: work.id)
+        #expect(state.verticalOffset == nil)
+        for height: CGFloat in [540, 800, 1040] {
+            let expanded = WorkTopicHeaderMetrics(viewportHeight: height, offset: 0)
+            let initial = expanded.entryOffset(saved: state.verticalOffset)
+            #expect(initial == expanded.expandedHeight - WorkTopicHeaderMetrics.compactHeight)
+            #expect(WorkTopicHeaderMetrics(viewportHeight: height, offset: initial).height == WorkTopicHeaderMetrics.compactHeight)
+            #expect(expanded.entryOffset(saved: 0) == 0)
+        }
         state.selection = .character(2)
         state.prefersTitle = true
-        state.vertical.offset = 310
+        state.verticalOffset = 310
         state.selector.offset = 48
         state.shelf(for: 2).offset = 128
         state.shelf(for: 4).offset = 280
@@ -1401,17 +1467,20 @@ struct AppPreferencesTests {
         let restored = store.workState(for: work.id)
         #expect(restored === state)
         #expect(restored.prefersTitle)
-        #expect(restored.vertical.offset == 310)
+        #expect(restored.verticalOffset == 310)
         #expect(restored.selector.offset == 48)
         #expect(restored.selection == .character(2))
         #expect(restored.shelf(for: 2).offset == 128)
         #expect(restored.shelf(for: 4).offset == 280)
         #expect(restored.shelf(for: 3).offset == 0)
+        restored.verticalOffset = 0
+        store.pruneAfterPathChange(oldPath: [work, .characterDetail(2)], newPath: [work])
+        #expect(store.workState(for: work.id).verticalOffset == 0)
         store.pruneAfterPathChange(oldPath: [work], newPath: [])
         let reopened = store.workState(for: work.id)
         #expect(reopened.selection == nil)
         #expect(!reopened.prefersTitle)
-        #expect(reopened.vertical.offset == 0)
+        #expect(reopened.verticalOffset == nil)
         #expect(reopened.selector.offset == 0)
         #expect(reopened.shelf(for: 2).offset == 0)
         store.clearAfterBaseDestinationChange()

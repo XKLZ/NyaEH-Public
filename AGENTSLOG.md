@@ -8,3 +8,4 @@
 - Work detail keeps one active character shelf per route. Assigning a character from its unclassified list adds a book-scoped tag and refreshes derived evidence in the same database transaction.
 - Direct Swift tests and QA share registered, process-leased fixture cleanup. Ordinary unit failures retain output only. The scratch verification entry owns disposable build projects separately from shared caches and explicitly exported evidence.
 - v23 records actual book membership changes for seven-day backup eligibility. The installation inventory owns backup locations and cross-kind retention outside the restorable database. External manager imports create one local rollback package after source validation.
+- The work-topic display projects edition-level character claims into version-group slots. Its unclassified queue and tag edits retain individual edition identities.

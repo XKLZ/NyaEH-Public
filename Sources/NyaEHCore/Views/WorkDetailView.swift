@@ -107,13 +107,13 @@ struct WorkDetailView: View {
             return detail.section(for: id)
         }
         let portrait = section.flatMap(portraitRequest)
-        return WorkTopicLayout(browsing: browsing) { presentation in
+        return WorkTopicLayout(browsing: browsing) { presentation, expand in
             WorkDetailHero(
                 detail: detail, presentation: presentation, browsing: browsing,
                 assetURL: store.catalog.tagVisualAssetURL(relativePath:),
                 localizer: localizer, onImportTagImage: importDroppedTagImage,
                 onDropError: { store.catalog.loadError = $0 },
-                onSearchWork: { onSearchWork(detail.work) }
+                onSearchWork: { onSearchWork(detail.work) }, onExpand: expand
             )
         } selector: {
             WorkTopicSelector(
@@ -773,10 +773,8 @@ struct WorkCharacterShelfPlaceholder: View {
         let metrics = WorkCharacterShelfMetrics.cardMetrics(usesDoubleRow: usesDoubleRow)
         let height = WorkCharacterShelfMetrics.carouselHeight(metrics: metrics, usesDoubleRow: usesDoubleRow, fields: fields)
         WorkCharacterShelfFrame {
-            WorkTopicCharacterGlass(expansion: 1)
-                .overlay(alignment: .bottom) {
-                    Capsule().fill(.secondary.opacity(0.12)).frame(maxWidth: 116).frame(height: 32).padding(8)
-                }
+            let glass = WorkTopicCharacterGlass(expansion: 1)
+            glass.overlay { glass.clippedNameplate { WorkTopicNameplatePlaceholder() } }
         } carousel: { layout in
             Color.clear.overlay(alignment: .topLeading) {
                 HStack(alignment: .top, spacing: usesDoubleRow ? 16 : 20) {
@@ -806,6 +804,7 @@ private struct WorkDetailHero: View {
     let onImportTagImage: (TagVisualDropImportKind, Data, TagVisualAssetTarget) -> Void
     let onDropError: (String) -> Void
     let onSearchWork: () -> Void
+    let onExpand: () -> Void
 
     @State private var foreground: NSImage?
 
@@ -813,9 +812,21 @@ private struct WorkDetailHero: View {
         ZStack {
             WorkHeroBackground(work: detail.work, assetURL: assetURL)
                 .opacity(presentation.artworkOpacity)
+                .allowsHitTesting(false)
+            WorkHeroDropCaptureOverlay(detail: detail, localizer: localizer,
+                                       onImportTagImage: onImportTagImage, onDropError: onDropError)
+            if presentation.canExpand {
+                Button(action: onExpand) {
+                    Color.clear.contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(localizer.string(.workTopicExpandIntroduction))
+                .onKeyPress(.return) { onExpand(); return .handled }
+            }
             WorkTopicHeroControls(presentation: presentation) {
                 identity
                 WorkTopicHeroCounts(characterCount: detail.characterCount, bookCount: detail.totalBookCount, localizer: localizer)
+                    .allowsHitTesting(false)
                 Text(introText)
                     .font(.title3.weight(.medium))
                     .foregroundStyle(.primary.opacity(0.88))
@@ -826,12 +837,9 @@ private struct WorkDetailHero: View {
                     .opacity(presentation.introductionOpacity)
                     .accessibilityHidden(presentation.introductionOpacity == 0)
                     .help(introText)
+                    .allowsHitTesting(!presentation.canExpand)
                 search
             }
-        }
-        .overlay {
-            WorkHeroDropCaptureOverlay(detail: detail, localizer: localizer,
-                                       onImportTagImage: onImportTagImage, onDropError: onDropError)
         }
         .task(id: detail.work.foregroundIdentity) {
             foreground = nil
@@ -866,7 +874,7 @@ private struct WorkDetailHero: View {
             .help(localizer.string(.workTopicSwitchTitle))
             .accessibilityHint(localizer.string(.workTopicSwitchTitle))
         } else {
-            title
+            title.allowsHitTesting(false)
         }
     }
 
@@ -892,9 +900,8 @@ private struct WorkDetailHero: View {
             .clipped()
             .contentShape(.capsule)
         }
-        .buttonStyle(.plain)
-        .font(.headline)
-        .background(.regularMaterial, in: .capsule)
+        .buttonStyle(WorkTopicSearchButtonStyle())
+        .onKeyPress(.return) { onSearchWork(); return .handled }
         .help(localizer.string(.workDetailSearchWork))
         .accessibilityLabel(localizer.string(.workDetailSearchWork))
     }
@@ -902,6 +909,60 @@ private struct WorkDetailHero: View {
     private var introText: String {
         let trimmed = detail.work.translationIntro?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? localizer.string(.workDetailNoIntro) : trimmed
+    }
+}
+
+private struct WorkTopicSearchButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isFocused) private var focused
+    @State private var hovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        let feedback = WorkTopicSearchFeedback(hovered: hovered, focused: focused, pressed: configuration.isPressed)
+        // The stationary capsule owns hover and clicks while its visible glass responds to the pointer.
+        Color.clear
+            .overlay {
+                configuration.label
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .glassEffect(.regular, in: .capsule)
+                    .overlay {
+                        Capsule().strokeBorder(.primary.opacity(feedback.edgeOpacity), lineWidth: 1)
+                    }
+                    .scaleEffect(feedback.scale(reduceMotion: reduceMotion))
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: feedback)
+                    .allowsHitTesting(false)
+            }
+            .contentShape(.capsule)
+            .onHover { hovered = $0 }
+    }
+}
+
+enum WorkTopicSearchFeedback: Equatable {
+    case resting, focused, hovered, pressed
+
+    init(hovered: Bool, focused: Bool, pressed: Bool) {
+        if pressed { self = .pressed }
+        else if hovered { self = .hovered }
+        else if focused { self = .focused }
+        else { self = .resting }
+    }
+
+    var edgeOpacity: Double {
+        switch self {
+        case .resting: 0.10
+        case .focused, .hovered: 0.34
+        case .pressed: 0.48
+        }
+    }
+
+    func scale(reduceMotion: Bool) -> CGFloat {
+        guard !reduceMotion else { return 1 }
+        switch self {
+        case .resting, .focused: return 1
+        case .hovered: return 1.035
+        case .pressed: return 0.96
+        }
     }
 }
 
@@ -913,19 +974,27 @@ struct WorkTopicHeroCounts: View {
     var body: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 10) {
-                WorkDetailPill(text: localizer.workDetailCharacterCount(characterCount), systemImage: "person.2", emphasized: true)
-                WorkDetailPill(text: localizer.workDetailBookCount(bookCount), systemImage: "books.vertical", emphasized: true)
+                pill(localizer.workDetailCharacterCount(characterCount), icon: "person.2", horizontalPadding: 9)
+                pill(localizer.workDetailBookCount(bookCount), icon: "books.vertical", horizontalPadding: 9)
             }
             HStack(spacing: 8) {
-                Label(characterCount.formatted(), systemImage: "person.2")
-                Label(bookCount.formatted(), systemImage: "books.vertical")
+                pill(characterCount.formatted(), icon: "person.2", horizontalPadding: 3)
+                pill(bookCount.formatted(), icon: "books.vertical", horizontalPadding: 3)
             }
-            .font(.caption.weight(.semibold))
         }
         .lineLimit(1)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(localizer.workDetailCharacterCount(characterCount) + ", " + localizer.workDetailBookCount(bookCount))
+    }
+
+    private func pill(_ text: String, icon: String, horizontalPadding: CGFloat) -> some View {
+        Label(text, systemImage: icon)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, horizontalPadding)
+            .padding(.vertical, 5)
+            .overlay { Capsule().strokeBorder(.secondary.opacity(0.65), lineWidth: 1) }
     }
 }
 
@@ -1307,7 +1376,7 @@ private struct WorkHeroDropCaptureBridge: NSViewRepresentable {
             guard TagVisualPasteboardDropHitPolicy.acceptsHit(for: window?.currentEvent?.type) else {
                 return nil
             }
-            return self
+            return super.hitTest(point)
         }
 
         override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -1451,15 +1520,15 @@ private struct WorkTopicBookCarousel: View {
                 ForEach(0..<WorkCharacterShelfLayout.columnCount(bookCount: section.bookCount, usesDoubleRow: doubleRow), id: \.self) { column in
                     let range = WorkCharacterShelfLayout.bookRange(forColumn: column, bookCount: section.bookCount, usesDoubleRow: doubleRow)
                     VStack(spacing: WorkCharacterShelfMetrics.doubleRowSpacing) {
-                        ForEach(section.books[range]) { book in
-                            BookCardButton(book: book, titleDisplayMode: titleDisplayMode, localizer: localizer,
+                        ForEach(section.slots[range]) { slot in
+                            BookCardButton(book: slot.book, titleDisplayMode: titleDisplayMode, localizer: localizer,
                                            metrics: metrics, action: onSelectBook)
                                 .overlay(alignment: .topLeading) {
-                                    if let id = book.databaseID, let claim = section.claimsByBookID[id], claim.source == .automatic {
+                                    if let claim = slot.claim, claim.source == .automatic {
                                         WorkCharacterClaimBadge(claim: claim, localizer: localizer).padding(5)
                                     }
                                 }
-                                .workCharacterClaimHint(book.databaseID.flatMap { section.claimsByBookID[$0] }, localizer: localizer)
+                                .workCharacterClaimHint(slot.claim, localizer: localizer)
                         }
                     }
                 }
@@ -1488,7 +1557,7 @@ private struct WorkTopicBookCarousel: View {
         .overlay(alignment: .leading) {
             if edges.back {
                 arrow(forward: false, viewport: layout.usableShelfWidth)
-                    .padding(.leading, layout.panelRight)
+                    .padding(.leading, layout.backArrowX)
             }
         }
         .overlay(alignment: .trailing) {
@@ -1906,12 +1975,11 @@ private struct WorkCharacterShelfViewportMask: View {
 private struct WorkDetailPill: View {
     let text: String
     let systemImage: String
-    var emphasized = false
 
     var body: some View {
         Label(text, systemImage: systemImage)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(emphasized ? .primary : .secondary)
+            .foregroundStyle(.secondary)
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
             .background(.regularMaterial, in: Capsule())

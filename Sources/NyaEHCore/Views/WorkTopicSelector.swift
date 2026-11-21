@@ -261,6 +261,21 @@ struct WorkTopicCharacterGlass: View {
     var body: some View {
         Color.clear.glassEffect(.clear, in: shape).opacity(glassOpacity)
     }
+
+    @ViewBuilder
+    func clippedNameplate<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        if expansion > 0.60 {
+            let nameplate = content()
+            GeometryReader { card in
+                nameplate
+                    .padding(.horizontal, card.size.width < 160 ? 8 : 12)
+                    .padding(.bottom, 14)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            }
+            .clipShape(shape)
+            .opacity(min(1, (expansion - 0.60) / 0.32))
+        }
+    }
 }
 
 /// Selector, exchange and stationary stage share composition, pose, cropping and glass.
@@ -294,16 +309,11 @@ struct WorkTopicCharacterCard<Nameplate: View>: View {
                 .padding(.horizontal, 4 * expansion)
                 .padding(.top, 6 * expansion)
                 .offset(x: direction.width * 2.5, y: direction.height * 2.5)
+                .rotation3DEffect(.degrees(4 * hypot(direction.width, direction.height)),
+                                  axis: (x: -direction.height, y: direction.width, z: 0), perspective: 0.35)
                 .clipShape(glass.shape)
                 .accessibilityHidden(true)
             }
-            .overlay(alignment: .bottom) {
-                if expansion > 0.60 {
-                    nameplate()
-                        .padding(8)
-                        .opacity(min(1, (expansion - 0.60) / 0.32))
-                        .offset(x: -direction.width * 1.5, y: -direction.height * 1.5)
-                }
-            }
+            .overlay { glass.clippedNameplate(nameplate) }
     }
 }

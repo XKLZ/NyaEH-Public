@@ -42,6 +42,7 @@ struct WorkTopicStageLayout {
     var panelRight: CGFloat { panelX + portraitWidth }
     var firstCoverX: CGFloat { panelRight + Self.cardInset }
     var usableShelfWidth: CGFloat { max(0, width - panelRight - trailingInset) }
+    var backArrowX: CGFloat { panelRight + (usableShelfWidth < 300 ? 12 : 18) }
 
     // A character always occupies one full double-row stage, even beside a single row of books.
     static func height(fields: BookCardFields) -> CGFloat {
@@ -99,24 +100,63 @@ struct WorkTopicCharacterNameplate: View {
 
     var body: some View {
         Button { onSelectCharacter(character) } label: {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(character.displayText)
-                        .font(.headline)
-                        .lineLimit(1)
-                    Text(localizer.workDetailBookCount(bookCount))
-                        .font(.caption)
+            WorkTopicNameplateSurface(glass: .clear.interactive()) {
+                HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(character.displayText)
+                            .font(.headline)
+                            .lineLimit(1)
+                        Text(localizer.workDetailBookCount(bookCount))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                 }
+            }
+        }
+        .buttonStyle(.plain)
+        .help(localizer.string(.workDetailOpenCharacter))
+        .accessibilityLabel(character.displayText)
+        .accessibilityValue(localizer.workDetailBookCount(bookCount))
+        .accessibilityHint(localizer.string(.workDetailOpenCharacter))
+    }
+}
+
+private struct WorkTopicNameplateSurface<Content: View>: View {
+    let glass: Glass
+    @ViewBuilder let content: () -> Content
+    @Environment(\.workTopicPortraitDirection) private var direction
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        content()
+            .offset(x: -direction.width * 1.5, y: -direction.height * 1.5)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+            .glassEffect(glass, in: shape)
+            .contentShape(shape)
+    }
+}
+
+struct WorkTopicNameplatePlaceholder: View {
+    var body: some View {
+        WorkTopicNameplateSurface(glass: .clear) {
+            HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Capsule().fill(.secondary.opacity(0.18)).frame(maxWidth: 82).frame(height: 9)
+                    Capsule().fill(.secondary.opacity(0.12)).frame(maxWidth: 34).frame(height: 6)
+                }
+                Spacer(minLength: 0)
                 Image(systemName: "arrow.up.right")
                     .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary.opacity(0.3))
             }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
         }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.roundedRectangle(radius: 12))
-        .help(localizer.string(.workDetailOpenCharacter))
-        .accessibilityHint(localizer.string(.workDetailOpenCharacter))
     }
 }

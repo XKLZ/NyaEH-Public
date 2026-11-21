@@ -97,7 +97,7 @@ struct WorkDetailTransitionShell: View {
     let localizer: AppLocalizer
 
     var body: some View {
-        WorkTopicLayout(browsing: browsing, isPlaceholder: true) { presentation in
+        WorkTopicLayout(browsing: browsing, isPlaceholder: true) { presentation, _ in
             WorkTopicHeroControls(presentation: presentation) {
                 Text(detail?.work.displayText ?? fallbackTitle)
                     .font(.system(size: presentation.interpolate(48, 18), weight: .bold))

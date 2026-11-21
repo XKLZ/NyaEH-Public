@@ -19,6 +19,9 @@ struct WorkTopicHeaderMetrics: Equatable {
 
     var travel: CGFloat { expandedHeight - Self.compactHeight }
     var progress: CGFloat { (expandedHeight - height) / travel }
+    var canExpand: Bool { height < expandedHeight }
+
+    func entryOffset(saved: CGFloat?) -> CGFloat { saved ?? travel }
 
     // The descriptive layers clear the card before its controls settle into the pinned row.
     var introductionOpacity: Double { max(0, 1 - progress / 0.52) }
@@ -35,18 +38,16 @@ struct WorkTopicHeaderMetrics: Equatable {
 struct WorkTopicLayout<Hero: View, Selector: View, Content: View>: View {
     let browsing: WorkTopicBrowsingState
     var isPlaceholder = false
-    @ViewBuilder let hero: (WorkTopicHeaderMetrics) -> Hero
+    @ViewBuilder let hero: (WorkTopicHeaderMetrics, @escaping () -> Void) -> Hero
     @ViewBuilder let selector: () -> Selector
     @ViewBuilder let content: () -> Content
-
-    @State private var scroll = ScrollPosition(edge: .top)
-    @State private var offset: CGFloat = 0
-    @State private var needsRestore = true
 
     var body: some View {
         GeometryReader { viewport in
             GeometryReader { extended in
-                page(viewport: viewport.size, underlap: max(0, extended.size.width - viewport.size.width))
+                if viewport.size.height > 0 {
+                    page(viewport: viewport.size, underlap: max(0, extended.size.width - viewport.size.width))
+                }
             }
             .ignoresSafeArea(.container, edges: .leading)
         }
@@ -55,15 +56,13 @@ struct WorkTopicLayout<Hero: View, Selector: View, Content: View>: View {
 
     private func page(viewport: CGSize, underlap: CGFloat) -> some View {
         let expanded = WorkTopicHeaderMetrics(viewportHeight: viewport.height, offset: 0)
-        let savedOffset = browsing.vertical.offset
-        let y = needsRestore ? savedOffset : offset
-        let presentation = WorkTopicHeaderMetrics(viewportHeight: viewport.height, offset: y)
         let surroundingHeight = WorkTopicHeaderMetrics.topInset + WorkTopicHeaderMetrics.selectorGap + WorkTopicSelector.height
 
-        return ScrollView {
+        return WorkTopicVerticalScroll(browsing: browsing, expanded: expanded, isPlaceholder: isPlaceholder) { y, expand in
+            let presentation = WorkTopicHeaderMetrics(viewportHeight: viewport.height, offset: y)
             VStack(spacing: 0) {
                 VStack(spacing: WorkTopicHeaderMetrics.selectorGap) {
-                    hero(presentation)
+                    hero(presentation, expand)
                         .frame(height: presentation.height)
                         .clipShape(.rect(cornerRadius: WorkDetailSurfaceRole.hero.cornerRadius))
                         .glassEffect(.regular, in: .rect(cornerRadius: WorkDetailSurfaceRole.hero.cornerRadius))
@@ -85,15 +84,48 @@ struct WorkTopicLayout<Hero: View, Selector: View, Content: View>: View {
             }
         }
         .environment(\.workTopicSidebarUnderlap, underlap)
+    }
+}
+
+private struct WorkTopicVerticalScroll<Content: View>: View {
+    let browsing: WorkTopicBrowsingState
+    let expanded: WorkTopicHeaderMetrics
+    let isPlaceholder: Bool
+    @ViewBuilder let content: (CGFloat, @escaping () -> Void) -> Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var scroll: ScrollPosition
+    @State private var offset: CGFloat
+    @State private var needsRestore = true
+
+    init(browsing: WorkTopicBrowsingState, expanded: WorkTopicHeaderMetrics, isPlaceholder: Bool,
+         @ViewBuilder content: @escaping (CGFloat, @escaping () -> Void) -> Content) {
+        self.browsing = browsing
+        self.expanded = expanded
+        self.isPlaceholder = isPlaceholder
+        self.content = content
+        // Seed the native scroller and the pinned header together on each route mount.
+        let entry = expanded.entryOffset(saved: browsing.verticalOffset)
+        _scroll = State(initialValue: ScrollPosition(y: entry))
+        _offset = State(initialValue: entry)
+    }
+
+    var body: some View {
+        ScrollView {
+            content(offset) {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.32)) {
+                    scroll.scrollTo(y: 0)
+                }
+            }
+        }
         .scrollPosition($scroll)
         .onScrollGeometryChange(for: Snapshot.self) { geometry in
             Snapshot(y: max(geometry.contentOffset.y + geometry.contentInsets.top, 0),
                      maxOffset: max(geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom - geometry.containerSize.height, 0),
-                     hasContent: geometry.contentSize.height > 0)
+                     hasContent: geometry.contentSize.height > 0 && geometry.containerSize.height > 0)
         } action: { _, current in
             guard current.hasContent else { return }
             if needsRestore {
-                let target = min(savedOffset, current.maxOffset)
+                let target = min(expanded.entryOffset(saved: browsing.verticalOffset), current.maxOffset)
                 needsRestore = false
                 if abs(target - current.y) > 1 {
                     offset = target
@@ -102,7 +134,7 @@ struct WorkTopicLayout<Hero: View, Selector: View, Content: View>: View {
                 }
             }
             offset = current.y
-            if !isPlaceholder { browsing.vertical.offset = current.y }
+            if !isPlaceholder { browsing.verticalOffset = current.y }
         }
         .onChange(of: expanded.travel) { previous, next in
             guard !needsRestore, offset >= previous - 1 else { return }

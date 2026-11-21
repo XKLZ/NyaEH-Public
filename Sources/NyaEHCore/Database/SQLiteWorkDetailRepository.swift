@@ -298,10 +298,29 @@ final class SQLiteWorkDetailRepository: WorkDetailRepository {
                 }
             }
 
+            // The global primary may carry neither the work tag nor the character tag.
+            var primaryVersions: [BookVersionGroup.DatabaseID: LibraryBook] = [:]
+            if booksInOrder.contains(where: { $0.versionGroupID != nil }) {
+                let rows = try Row.fetchAll(db, sql: """
+                    SELECT primary_book.*
+                    FROM library_books primary_book
+                    WHERE primary_book.is_primary_version = 1 AND primary_book.version_group_id IN (
+                        SELECT matched.version_group_id FROM book_tags
+                        JOIN library_books matched ON matched.id = book_tags.book_id
+                        WHERE book_tags.tag_id = ? AND matched.version_group_id IS NOT NULL
+                    )
+                    """, arguments: [parodyTagID])
+                for row in rows {
+                    let book = SQLiteLibraryBookRepository.book(from: row)
+                    if let group = book.versionGroupID { primaryVersions[group] = book }
+                }
+            }
+
             return WorkDetail(
                 work: work,
                 sections: sections,
-                hasCharacterIndexRelations: try Self.characterIndexRelationCount(db: db, parodyTagID: parodyTagID) > 0
+                hasCharacterIndexRelations: try Self.characterIndexRelationCount(db: db, parodyTagID: parodyTagID) > 0,
+                primaryVersions: primaryVersions
             )
         }
     }
@@ -565,7 +584,8 @@ final class SQLiteWorkDetailRepository: WorkDetailRepository {
             ORDER BY character_tag_count DESC,
                      characters.name COLLATE NOCASE ASC,
                      library_books.date DESC,
-                     library_books.title COLLATE NOCASE ASC
+                     library_books.title COLLATE NOCASE ASC,
+                     library_books.id ASC
             """
     }
 

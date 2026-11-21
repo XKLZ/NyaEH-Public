@@ -261,7 +261,8 @@ enum WorkTopicSelection: Equatable {
     var selection: WorkTopicSelection?
     var prefersTitle = false
     let selector = WorkTopicScrollMemory()
-    let vertical = WorkTopicScrollMemory()
+    // nil is a new visit. Zero is an intentional return to the expanded introduction.
+    @ObservationIgnored var verticalOffset: CGFloat?
     @ObservationIgnored private var shelves: [Tag.DatabaseID: WorkTopicScrollMemory] = [:]
 
     func shelf(for characterID: Tag.DatabaseID) -> WorkTopicScrollMemory {

@@ -5276,6 +5276,11 @@ struct SQLiteLibraryBookRepositoryTests {
                                        tags: #"["parody:work a","parody:work b","character:person a","character:person b"]"#)
         _ = try insertBook(context, title: "No Character", hash: "claim-no-character", filepath: "/tmp/claim-no-character.cbz",
                                          tags: #"["parody:work b","parody:work c"]"#)
+        let primary = try context.books.insert(sampleBook(title: "External edition", hash: "claim-primary",
+                                                          filepath: "/tmp/claim-primary.cbz"))
+        let service = BookLibraryService(bookRepository: context.books, metadataRepository: context.metadata,
+                                         versionGroupRepository: context.versionGroups)
+        _ = try service.createVersionGroup(with: [primary, crossover])
         _ = try context.workCharacters.rebuildIndex()
         let tags = try context.tags.fetchAllTags()
         let workA = try #require(tags.first { $0.rawValue == "parody:work a" }?.id)
@@ -5292,6 +5297,9 @@ struct SQLiteLibraryBookRepositoryTests {
         #expect(detailB.totalBookCount == 2)
         #expect(inferred.books.map(\.title) == ["Crossover"])
         #expect(inferred.claimsByBookID[crossoverID]?.source == .automatic)
+        let slot = try #require(inferred.slots.first)
+        #expect(slot.book.id == primary.id)
+        #expect(slot.claim == inferred.claimsByBookID[crossoverID])
         #expect(unclassified.books.map(\.title) == ["No Character"])
         let detailC = try #require(try context.workDetails.fetchWorkDetail(parodyTagID: workC, languageCode: nil))
         #expect(detailC.totalBookCount == 1)
@@ -5310,6 +5318,7 @@ struct SQLiteLibraryBookRepositoryTests {
         try context.workDetails.setWorkCharacterDecision(.confirmed, pair: pair)
         let confirmed = try #require(try context.workDetails.fetchWorkDetail(parodyTagID: workB, languageCode: nil))
         #expect(confirmed.sections.first { $0.character?.id == personB }?.claimsByBookID[crossoverID]?.source == .manual)
+        #expect(confirmed.section(for: personB)?.slots.first?.claim?.source == .manual)
     }
 
     @Test("adding a character tag updates only the chosen book, search and both topics atomically")
@@ -5559,6 +5568,151 @@ struct SQLiteLibraryBookRepositoryTests {
         #expect(sections["love live"]?.work?.visualProfile?.backgroundAssetPath == "TagAssets/parody/love-live-\(loveLiveID)/bg.jpg")
         #expect(sections["idol master"]?.books.map(\.title) == ["Honoka Idol"])
         #expect(ungrouped.books.map(\.title) == ["Honoka Crossover"])
+    }
+
+    @MainActor
+    @Test("work topic shelves fold matching editions after resolving each character and preserve individual pending books")
+    func workTopicVersionSlots() throws {
+        let context = try makeContext()
+        func add(_ name: String, _ tags: String) throws -> LibraryBook {
+            try insertBook(context, title: name, hash: "work-slot-\(name)", filepath: "/tmp/work-slot-\(name).cbz", tags: tags)
+        }
+        let atlas = #"["parody:atlas"]"#
+        let alpha = #"["parody:atlas","character:alpha"]"#
+        let primary = try add("primary", #"["parody:outside"]"#)
+        let alphaMatch = try add("first", alpha)
+        let bothMatch = try add("second", #"["parody:atlas","character:alpha","character:beta"]"#)
+        let pending = [try add("pending-1", atlas), try add("pending-2", atlas)]
+        let service = BookLibraryService(bookRepository: context.books, metadataRepository: context.metadata,
+                                         collectionRepository: context.collections, versionGroupRepository: context.versionGroups)
+        let group = try service.createVersionGroup(with: [primary, alphaMatch, bothMatch] + pending)
+        let groupID = try #require(group.databaseID)
+        let series = try service.createCollection(name: "volumes")
+        for index in 1...5 {
+            try service.addBook(try add("vol-\(index)", alpha), to: series)
+        }
+        _ = try context.workCharacters.rebuildIndex()
+        let tags = try context.tags.fetchAllTags()
+        let workID = try #require(tags.first { $0.rawValue == "parody:atlas" }?.id)
+        let alphaID = try #require(tags.first { $0.rawValue == "character:alpha" }?.id)
+        let betaID = try #require(tags.first { $0.rawValue == "character:beta" }?.id)
+        func read() throws -> WorkDetail {
+            try #require(try context.workDetails.fetchWorkDetail(parodyTagID: workID, languageCode: nil))
+        }
+
+        var detail = try read()
+        let section = try #require(detail.section(for: alphaID))
+        #expect(section.books.count == 7)
+        #expect(section.bookCount == 6)
+        #expect(!WorkCharacterShelfLayout.usesDoubleRow(bookCount: section.bookCount))
+        let slot = try #require(section.slots.first { $0.id == .versionGroup(groupID) })
+        #expect(slot.book.id == primary.id)
+        #expect(slot.claim?.source == .indexed)
+        #expect(detail.section(for: betaID)?.slots == [slot])
+        #expect(Set(detail.unclassifiedBooks.map(\.id)) == Set(pending.map(\.id)))
+        #expect(detail.characterCount == 2)
+        #expect(detail.totalBookCount == 6)
+
+        _ = try add("vol-6", alpha)
+        detail = try read()
+        #expect(detail.totalBookCount == 7)
+        #expect(WorkCharacterShelfLayout.usesDoubleRow(bookCount: try #require(detail.section(for: alphaID)).bookCount))
+
+        _ = try service.setUserHidden(true, for: primary)
+        detail = try read()
+        #expect(detail.section(for: alphaID)?.slots.first { $0.id == slot.id }?.book.id == alphaMatch.id)
+        #expect(detail.section(for: betaID)?.slots.first?.book.id == bothMatch.id)
+        _ = try service.setUserHidden(true, for: bothMatch)
+        detail = try read()
+        #expect(detail.section(for: betaID) == nil)
+        #expect(detail.characterCount == 1)
+        #expect(detail.totalBookCount == 7)
+    }
+
+    @MainActor
+    @Test("cached work topics follow version group membership, optimistic promotion, and rollback during reload")
+    func workTopicCachedVersionSlots() async throws {
+        let context = try makeContext()
+        func add(_ name: String, _ tags: String) throws -> LibraryBook {
+            try insertBook(context, title: name, hash: "cached-slot-\(name)", filepath: "/tmp/cached-slot-\(name).cbz", tags: tags)
+        }
+        let outside = #"["parody:outside"]"#
+        let primary = try add("primary", outside)
+        let other = try add("other", outside)
+        let match = try add("match", #"["parody:atlas","character:alpha"]"#)
+        let service = BookLibraryService(bookRepository: context.books, metadataRepository: context.metadata,
+                                         tagRepository: context.tags, versionGroupRepository: context.versionGroups,
+                                         workDetailRepository: context.workDetails)
+        let group = try service.createVersionGroup(with: [primary, other])
+        let groupID = try #require(group.databaseID)
+        _ = try context.workCharacters.rebuildIndex()
+        let tags = try context.tags.fetchAllTags()
+        let workID = try #require(tags.first { $0.rawValue == "parody:atlas" }?.id)
+        let alphaID = try #require(tags.first { $0.rawValue == "character:alpha" }?.id)
+        let gate = OrganizationExecutionGate()
+        let store = CatalogStore(service: service, organizationBeforeExecute: { await gate.pause() })
+        func slot() -> WorkTopicBookSlot? { store.workDetail(tagID: workID)?.section(for: alphaID)?.slots.first }
+        func reload() { store.reloadWorkDetail(tagID: workID, isTagTranslationEnabled: false, forceReload: true) }
+        store.refresh()
+        reload()
+        await store.waitForWorkDetailLoad(tagID: workID)
+        #expect(slot()?.id == .book(match.id))
+        store.addBook(match, toVersionGroup: group)
+        await gate.waitForStarts(1)
+        await gate.releaseNext()
+        await store.waitForOrganizationMutations()
+        #expect(slot()?.id == .versionGroup(groupID))
+        #expect(slot()?.book.id == primary.id)
+
+        store.setUserHidden(true, for: primary)
+        #expect(slot()?.book.id == match.id)
+        store.setUserHidden(false, for: primary)
+        #expect(slot()?.book.id == primary.id)
+
+        // In both orderings the background query still sees the old primary in SQLite.
+        reload()
+        store.setPrimaryVersion(match)
+        await gate.waitForStarts(2)
+        #expect(slot()?.book.id == match.id)
+        await store.waitForWorkDetailLoad(tagID: workID)
+        #expect(slot()?.book.id == match.id)
+        reload()
+        await store.waitForWorkDetailLoad(tagID: workID)
+        #expect(slot()?.book.id == match.id)
+        await gate.releaseNext()
+        await store.waitForOrganizationMutations()
+        #expect(slot()?.id == .versionGroup(groupID))
+
+        let primaryID = try #require(primary.databaseID)
+        try await context.database.dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TRIGGER reject_topic_promotion BEFORE UPDATE OF is_primary_version ON library_books
+                WHEN NEW.id = \(primaryID) AND NEW.is_primary_version = 1
+                BEGIN SELECT RAISE(ABORT, 'reject topic promotion'); END
+                """)
+        }
+        store.setPrimaryVersion(primary)
+        await gate.waitForStarts(3)
+        #expect(slot()?.book.id == primary.id)
+        await gate.releaseNext()
+        await store.waitForOrganizationMutations()
+        #expect(slot()?.book.id == match.id)
+        #expect(store.loadError != nil)
+
+        // The card action waits for the commit before changing its cover and operation target.
+        var completed = false
+        store.setPrimaryVersion(other) { error in completed = error == nil }
+        await gate.waitForStarts(4)
+        #expect(slot()?.book.id == match.id)
+        await gate.releaseNext()
+        await store.waitForOrganizationMutations()
+        #expect(completed)
+        #expect(slot()?.book.id == other.id)
+        #expect(slot()?.id == .versionGroup(groupID))
+        let revision = store.workDetailRevision
+        store.reloadWorkDetail(tagID: workID, isTagTranslationEnabled: false)
+        #expect(store.workDetailRevision == revision)
+        #expect(slot()?.book.id == other.id)
     }
 
     @MainActor

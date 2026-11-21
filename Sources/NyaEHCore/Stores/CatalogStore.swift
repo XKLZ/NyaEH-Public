@@ -90,6 +90,9 @@ final class CatalogStore: BookCardLibrary {
     var loadingTagSummaryKeys: Set<String> = []
     var tagSummaryRevision = 0
     var workDetailCache: [Tag.DatabaseID: WorkDetail] = [:]
+    // A repository read can finish after a concurrent version change. Overlay only editions
+    // changed while that request was in flight, including queued optimistic primary switches.
+    @ObservationIgnored private var workDetailVersionUpdates: [Tag.DatabaseID: [LibraryBook.ID: LibraryBook]] = [:]
     var workDetailTranslationStates: [Tag.DatabaseID: Bool] = [:]
     var loadingWorkDetailIDs: Set<Tag.DatabaseID> = []
     var workDetailErrors: [Tag.DatabaseID: String] = [:]
@@ -1221,6 +1224,13 @@ final class CatalogStore: BookCardLibrary {
         }
 
         loadingWorkDetailIDs.insert(tagID)
+        var optimisticBooks: [LibraryBook.ID: LibraryBook] = [:]
+        for (_, mutation, optimistic) in pendingOrganizationMutations where optimistic {
+            if case let .setPrimaryVersion(member) = mutation, let group = (bookIndex[member.id] ?? member).versionGroupID {
+                for book in booksByVersionGroupID[group] ?? [] { optimisticBooks[book.id] = bookIndex[book.id] ?? book }
+            }
+        }
+        workDetailVersionUpdates[tagID] = optimisticBooks
         workDetailErrors[tagID] = nil
 
         let service = service
@@ -1237,8 +1247,10 @@ final class CatalogStore: BookCardLibrary {
 
             guard !Task.isCancelled else { return }
 
+            let updates = workDetailVersionUpdates.removeValue(forKey: tagID) ?? [:]
             switch result {
-            case .success(let detail):
+            case .success(var detail):
+                if !updates.isEmpty { _ = detail?.updateVersions(updates) }
                 workDetailCache[tagID] = detail
                 workDetailTranslationStates[tagID] = isTagTranslationEnabled
                 workDetailErrors[tagID] = nil
@@ -1305,6 +1317,7 @@ final class CatalogStore: BookCardLibrary {
     private func invalidateWorkDetails(keepingVisibleWork workID: Tag.DatabaseID? = nil) {
         workDetailLoadTasks.values.forEach { $0.cancel() }
         workDetailLoadTasks.removeAll()
+        workDetailVersionUpdates.removeAll()
         // Keep the active topic on screen while it refreshes after a single-book assignment.
         if let workID, let current = workDetailCache[workID] {
             workDetailCache = [workID: current]
@@ -3227,8 +3240,41 @@ final class CatalogStore: BookCardLibrary {
         }
     }
 
+    private func patchWorkTopicVersions(_ updatedBooks: [LibraryBook]) {
+        guard !workDetailCache.isEmpty || !loadingWorkDetailIDs.isEmpty else { return }
+        var changes: [LibraryBook.ID: LibraryBook] = [:]
+        for book in updatedBooks {
+            let old = bookIndex[book.id]
+            if old?.versionGroupID != book.versionGroupID || old?.isPrimaryVersion != book.isPrimaryVersion
+                || old?.isUserHidden != book.isUserHidden {
+                changes[book.id] = book
+            }
+        }
+        guard !changes.isEmpty else { return }
+        // An edition can join an existing group whose unchanged primary has no tags from this topic.
+        var groups = Set(changes.values.compactMap(\.versionGroupID))
+        for candidate in updatedBooks where candidate.isPrimaryVersion {
+            if let group = candidate.versionGroupID, groups.remove(group) != nil {
+                changes[candidate.id] = candidate
+            }
+        }
+        for group in groups {
+            if let primary = booksByVersionGroupID[group]?.first(where: \.isPrimaryVersion),
+               changes[primary.id] == nil {
+                changes[primary.id] = bookIndex[primary.id] ?? primary
+            }
+        }
+        for id in loadingWorkDetailIDs {
+            workDetailVersionUpdates[id, default: [:]].merge(changes) { _, latest in latest }
+        }
+        for (id, var detail) in workDetailCache where detail.updateVersions(changes) {
+            workDetailCache[id] = detail
+        }
+    }
+
     private func patchOrganizationBooks(_ updatedBooks: [LibraryBook]) {
         guard !updatedBooks.isEmpty else { return }
+        patchWorkTopicVersions(updatedBooks)
         var touchedCollections = Set<BookCollection.DatabaseID>()
         var touchedVersionGroups = Set<BookVersionGroup.DatabaseID>()
         let changedIDs = Set(updatedBooks.map(\.id))
@@ -4750,6 +4796,7 @@ final class CatalogStore: BookCardLibrary {
 
     private func applyBookUpdatesIncrementally(_ updatedBooks: [LibraryBook]) {
         guard !updatedBooks.isEmpty else { return }
+        patchWorkTopicVersions(updatedBooks)
         let updatedByID = Dictionary(uniqueKeysWithValues: updatedBooks.map { ($0.id, $0) })
 
         let arrivalOrderChanged = updatedBooks.contains { book in

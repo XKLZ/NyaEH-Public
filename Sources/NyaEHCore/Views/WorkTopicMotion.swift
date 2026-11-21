@@ -456,8 +456,6 @@ private struct WorkTopicStageMotion: ViewModifier {
         let direction = visible && !reduceMotion ? localDirection : CGSize.zero
         content
             .environment(\.workTopicPortraitDirection, direction)
-            .rotation3DEffect(.degrees(4 * hypot(direction.width, direction.height)),
-                              axis: (x: -direction.height, y: direction.width, z: 0), perspective: 0.35)
             .animation(reduceMotion ? nil : .snappy(duration: 0.16, extraBounce: 0), value: direction)
             .opacity(visible ? 1 : 0)
             .allowsHitTesting(visible)
